@@ -1,0 +1,27 @@
+# SafeEdge — Detection Layer Dependencies
+# pip install -r requirements.txt
+
+# Core detection
+ultralytics>=8.0.0          # YOLOv8n
+opencv-python>=4.8.0        # Video processing, Haar cascades
+
+# Face blur (optional but recommended — falls back to Haar if missing)
+mediapipe>=0.10.0
+
+# API server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Edge metrics
+psutil>=5.9.0
+
+# Model download
+huggingface-hub>=0.19.0
+
+# Claude Vision API (optional enrichment — set ANTHROPIC_API_KEY to enable)
+anthropic>=0.20.0
+
+# Utilities
+numpy>=1.24.0
+python-dotenv>=1.0.0
