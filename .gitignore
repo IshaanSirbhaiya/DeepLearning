@@ -43,6 +43,10 @@ testbench/*.mp4
 testbench/*.avi
 !testbench/.gitkeep
 
+# Reports (temp files)
+reports/cache/
+reports/charts/
+
 # Database
 *.db
 *.db-wal
