@@ -1,34 +1,36 @@
--- Run this SQL in your Supabase SQL Editor to create the users table:
+-- Run this SQL in your Supabase SQL Editor to set up the full schema.
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE users (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    status TEXT NOT NULL,
-    lat FLOAT,
-    lon FLOAT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ── Evacuees table ────────────────────────────────────────────────────────────
+CREATE TABLE evacuees (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    chat_id TEXT,
+    status TEXT,             -- 'secure' | 'safe' | 'unaccounted' | 'sos' | 'endangered'
+    location_link TEXT,      -- Google Maps URL e.g. https://maps.google.com/maps?q=1.344,103.682
+    last_update TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Fire incidents table; store one row per reported fire location/update.
-CREATE TABLE fire_locations (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    incident_name TEXT NOT NULL DEFAULT 'Campus Fire',
-    lat DOUBLE PRECISION NOT NULL,
-    lon DOUBLE PRECISION NOT NULL,
-    radius_m INTEGER NOT NULL DEFAULT 100 CHECK (radius_m > 0),
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    reported_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ALTER TABLE evacuees ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public can read evacuees"   ON evacuees FOR SELECT USING (true);
+CREATE POLICY "Public can insert evacuees" ON evacuees FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public can update evacuees" ON evacuees FOR UPDATE USING (true);
+
+-- ── Hazards table ─────────────────────────────────────────────────────────────
+CREATE TABLE hazards (
+    id SERIAL PRIMARY KEY,
+    name TEXT,                            -- e.g., "The Hive Fire"
+    latitude FLOAT,
+    longitude FLOAT,
+    status TEXT DEFAULT 'active',         -- 'active' | 'contained'
+    reported_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_fire_locations_active_reported
-    ON fire_locations (is_active, reported_at DESC);
+ALTER TABLE hazards ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow everything for demo" ON public.hazards
+    FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- Example insert:
--- INSERT INTO fire_locations (incident_name, lat, lon, radius_m, is_active)
--- VALUES ('North Spine Electrical Fire', 1.3468, 103.6810, 120, TRUE);
-
--- Note: In a production app you might want to enable RLS (Row Level Security),
--- but for a hackathon/dashboard prototype, it is often easier to leave this open or strictly API-key protected.
+-- INSERT INTO hazards (name, latitude, longitude, status)
+-- VALUES ('The Hive Fire', 1.3437, 103.6801, 'active');

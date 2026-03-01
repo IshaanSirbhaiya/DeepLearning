@@ -185,14 +185,14 @@ def fetch_telemetry_data():
         }
     
     try:
-        # 0. Fetch latest active fire incident (if any)
+        # 0. Fetch latest active fire hazard (if any)
         fire_zone = None
         try:
             fire_res = (
                 supabase
-                .table("fire_locations")
-                .select("incident_name, lat, lon, radius_m, reported_at")
-                .eq("is_active", True)
+                .table("hazards")
+                .select("name, latitude, longitude, reported_at")
+                .eq("status", "active")
                 .order("reported_at", desc=True)
                 .limit(1)
                 .execute()
@@ -201,10 +201,10 @@ def fetch_telemetry_data():
             if fire_rows:
                 fire_row = fire_rows[0]
                 fire_zone = {
-                    "lat": float(fire_row["lat"]),
-                    "lon": float(fire_row["lon"]),
-                    "radius": int(fire_row.get("radius_m", 100)),
-                    "incident_name": fire_row.get("incident_name", "Fire Incident"),
+                    "lat": float(fire_row["latitude"]),
+                    "lon": float(fire_row["longitude"]),
+                    "radius": 100,
+                    "incident_name": fire_row.get("name", "Fire Incident"),
                 }
         except Exception:
             fire_zone = None
