@@ -224,11 +224,11 @@ def fetch_telemetry_data():
         for u in users:
             stat = str(u.get("status", "")).lower()
 
-            # 'endangered' → counts as unaccounted (in transit)
-            # 'emergency'  → counts as sos (requires immediate rescue)
+            # 'endangered'     → counts as unaccounted (in transit)
+            # 'emergency help' → counts as sos (requires immediate rescue)
             if stat == "endangered":
                 stat = "unaccounted"
-            elif stat == "emergency":
+            elif stat == "emergency help":
                 stat = "sos"
 
             if stat in counts:
@@ -251,7 +251,7 @@ def fetch_telemetry_data():
             stat = str(u.get("status", "")).lower()
             event_map = {
                 "sos": "SOS INITIATED",
-                "emergency": "SOS INITIATED",
+                "emergency help": "SOS INITIATED",
                 "safe": "Arrived at verified Assembly",
                 "secure": "Mesh Node Connection Strong",
                 "unaccounted": "In transit/Connection weak",
