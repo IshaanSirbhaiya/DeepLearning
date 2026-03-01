@@ -10,10 +10,12 @@ This module exposes two things:
 When fire is confirmed, teammates get exactly:
   {
     "fire_detected": true,
+    "latitude": 1.34321,
+    "longitude": 103.68275,
     "location": {
-      "building": "Block 4A",
-      "floor": 3,
-      "zone": "kitchen"
+      "building": "The Hive",
+      "floor": 2,
+      "zone": "Collaboration Studio"
     },
     "confidence": 0.92,
     "risk_level": "CRITICAL",
@@ -32,12 +34,11 @@ while True:
     r = requests.get("http://localhost:8001/fire")
     data = r.json()
     if data["fire_detected"]:
-        building = data["location"]["building"]
-        floor    = data["location"]["floor"]
-        zone     = data["location"]["zone"]
-        risk     = data["risk_level"]
-        print(f"🔥 FIRE at {building} Floor {floor} ({zone}) — {risk}")
-        # → trigger Telegram bot / run Dijkstra here
+        lat  = data["latitude"]
+        lng  = data["longitude"]
+        risk = data["risk_level"]
+        print(f"🔥 FIRE at lat={lat}, lng={lng} — {risk}")
+        # → run Dijkstra, send Telegram, etc.
     time.sleep(2)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -47,7 +48,7 @@ TEAMMATE USAGE — Option B: Direct Import
 from fire_event import fire_event
 
 def on_fire(event):
-    print(f"FIRE at {event['location']['building']} floor {event['location']['floor']}")
+    print(f"FIRE at lat={event['latitude']}, lng={event['longitude']}")
     # → run Dijkstra, send Telegram, etc.
 
 fire_event.subscribe(on_fire)   # your callback fires instantly on detection
@@ -84,11 +85,15 @@ class FireEventBus:
         confidence: float,
         risk_level: str,
         camera_id:  str,
+        latitude:   float = 0.0,
+        longitude:  float = 0.0,
     ) -> Dict:
         """Called internally by detector when fire is confirmed."""
         self._event_counter += 1
         event = {
             "fire_detected": True,
+            "latitude":    latitude,
+            "longitude":   longitude,
             "location": {
                 "building": building,
                 "floor":    floor,
@@ -200,12 +205,14 @@ if __name__ == "__main__":
     def simulate():
         time.sleep(3)
         event = fire_event.publish(
-            building   = "Block 4A",
-            floor      = 3,
-            zone       = "kitchen",
+            building   = "The Hive",
+            floor      = 2,
+            zone       = "Collaboration Studio",
             confidence = 0.92,
             risk_level = "CRITICAL",
             camera_id  = "CAM_01",
+            latitude   = 1.34321,
+            longitude  = 103.68275,
         )
         print(f"\n🔥 PUBLISHED: {event}\n")
 
