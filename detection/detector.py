@@ -7,6 +7,7 @@ Main fire detection engine.
 - Multi-frame confirmation via RiskScorer
 - Face-blurred snapshots via PrivacyFilter
 - Structured JSON alerts via AlertGenerator
+- PRE-FIRE early warning via EarlyFireDetector (optical flow + bg sub + texture)
 - Exposes a FastAPI endpoint for communication layer
 - Logs FPS, CPU %, memory MB to prove edge viability
 
@@ -35,10 +36,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── Local imports ─────────────────────────────────────────────────────────────
-from risk_scorer    import RiskScorer, ScorerConfig, FrameDetection, ScoreResult
-from privacy_filter import PrivacyFilter
+from risk_scorer     import RiskScorer, ScorerConfig, FrameDetection, ScoreResult
+from privacy_filter  import PrivacyFilter
 from alert_generator import AlertGenerator, LocationConfig
 from fire_event      import fire_event, register_routes
+from early_detector  import EarlyFireDetector, EarlyWarning   # ← NEW
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -56,20 +58,20 @@ logger = logging.getLogger("SafeEdge.Detector")
 class DetectorConfig:
     # Model
     MODEL_PATH          = Path("models/fire_smoke.pt")
-    MODEL_REPO          = "keremberke/yolov8n-fire-smoke-detection"   # HuggingFace
-    CONFIDENCE_THRESHOLD = 0.45       # lower than scorer ignore — YOLO pre-filter
-    IOU_THRESHOLD        = 0.45       # NMS IoU
-    IMG_SIZE             = 640        # inference resolution
-    DEVICE               = "cpu"      # "cuda" if GPU available
+    MODEL_REPO          = "keremberke/yolov8n-fire-smoke-detection"
+    CONFIDENCE_THRESHOLD = 0.45
+    IOU_THRESHOLD        = 0.45
+    IMG_SIZE             = 640
+    DEVICE               = "cpu"
 
     # Stream
     TARGET_FPS          = 15
-    FRAME_SKIP          = 2           # process every Nth frame (1 = every frame)
-    DISPLAY             = True        # show live preview window
+    FRAME_SKIP          = 2
+    DISPLAY             = True
 
     # Alert
     CAMERA_ID           = os.getenv("CAMERA_ID",   "CAM_01")
-    BUILDING            = os.getenv("BUILDING",    "Block 4A")
+    BUILDING            = os.getenv("BUILDING",    "Block 4A")   # overridden per-alert
     FLOOR               = int(os.getenv("FLOOR",   "1"))
     ZONE                = os.getenv("ZONE",        "unknown")
 
@@ -82,36 +84,81 @@ class DetectorConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# NTU CAMPUS LOCATIONS
+# Each entry is a full location dict sent to teammates via fire_event payload.
+# lat/lng are used by the outdoor evacuation / Google Maps routing module.
+# ══════════════════════════════════════════════════════════════════════════════
+
+NTU_LOCATIONS = [
+    {
+        "building": "The Hive",
+        "floor":    2,
+        "zone":     "Collaboration Studio",
+        "campus":   "NTU",
+        "lat":      1.3454,
+        "lng":      103.6818,
+    },
+    {
+        "building": "Northspine",
+        "floor":    1,
+        "zone":     "Food Court",
+        "campus":   "NTU",
+        "lat":      1.3483,
+        "lng":      103.6831,
+    },
+    {
+        "building": "School of Chemical and Biomedical Engineering",
+        "floor":    3,
+        "zone":     "Laboratory Wing",
+        "campus":   "NTU",
+        "lat":      1.3412,
+        "lng":      103.6801,
+    },
+    {
+        "building": "Hall of Residence 2",
+        "floor":    4,
+        "zone":     "Common Kitchen",
+        "campus":   "NTU",
+        "lat":      1.3467,
+        "lng":      103.6795,
+    },
+]
+
+
+def pick_random_ntu_location() -> dict:
+    """
+    Randomly select one NTU campus location for demo purposes.
+    Called once per confirmed fire alert — teammates receive whichever
+    location is chosen in the fire_event payload.
+    """
+    import random
+    loc = random.choice(NTU_LOCATIONS)
+    logger.info(
+        f"[Demo] Location picked → {loc['building']} "
+        f"Floor {loc['floor']} ({loc['zone']})"
+    )
+    return loc
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MODEL LOADER
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_model():
-    """
-    Load YOLOv8n fire/smoke model.
-
-    Priority:
-      1. Local weights at models/fire_smoke.pt
-      2. Download from HuggingFace via ultralytics hub
-      3. Fall back to base YOLOv8n (generic COCO — less accurate for fire)
-    """
     try:
         from ultralytics import YOLO
     except ImportError:
-        logger.critical(
-            "ultralytics not installed. Run: pip install ultralytics"
-        )
+        logger.critical("ultralytics not installed. Run: pip install ultralytics")
         sys.exit(1)
 
     cfg = DetectorConfig
 
-    # ── Try local weights first ───────────────────────────────────────────────
     if cfg.MODEL_PATH.exists():
         logger.info(f"Loading local weights: {cfg.MODEL_PATH}")
         model = YOLO(str(cfg.MODEL_PATH))
         logger.info(f"✓ Model loaded from disk — classes: {model.names}")
         return model
 
-    # ── Download from HuggingFace ─────────────────────────────────────────────
     logger.info(f"Local weights not found. Downloading from HuggingFace: {cfg.MODEL_REPO}")
     try:
         from huggingface_hub import hf_hub_download
@@ -120,20 +167,16 @@ def load_model():
             filename="best.pt",
             local_dir="models",
         )
-        # Rename to canonical name
         os.rename(pt_file, str(cfg.MODEL_PATH))
         model = YOLO(str(cfg.MODEL_PATH))
         logger.info(f"✓ Downloaded & loaded. Classes: {model.names}")
         return model
-
     except Exception as e:
         logger.warning(f"HuggingFace download failed: {e}")
 
-    # ── Fallback: base YOLOv8n (COCO — no fire class) ────────────────────────
     logger.warning(
         "Falling back to base YOLOv8n (COCO weights). "
-        "Fire/smoke detection accuracy will be LOWER. "
-        "Place fire-specific weights at models/fire_smoke.pt for best results."
+        "Fire/smoke detection accuracy will be LOWER."
     )
     model = YOLO("yolov8n.pt")
     return model
@@ -144,8 +187,6 @@ def load_model():
 # ══════════════════════════════════════════════════════════════════════════════
 
 class EdgeMetrics:
-    """Rolling average of FPS, CPU, and memory — logged per detection."""
-
     def __init__(self, window: int = 30):
         self._fps_buf:  List[float] = []
         self._cpu_buf:  List[float] = []
@@ -158,9 +199,8 @@ class EdgeMetrics:
         now  = time.time()
         fps  = 1.0 / max(now - self._prev_time, 1e-6)
         self._prev_time = now
-
         cpu  = self._process.cpu_percent()
-        mem  = self._process.memory_info().rss / (1024 * 1024)  # MB
+        mem  = self._process.memory_info().rss / (1024 * 1024)
 
         self._fps_buf.append(fps)
         self._cpu_buf.append(cpu)
@@ -185,13 +225,12 @@ class EdgeMetrics:
 
 class FireDetector:
     """
-    Core detection engine. Processes frames from any OpenCV-compatible source.
-
-    Thread-safe: detection loop runs on a background thread.
-    Alerts are placed into self.alert_queue for the API layer to consume.
+    Core detection engine. Now runs TWO parallel detection tracks:
+      Track A: YOLOv8n — detects VISIBLE fire and smoke (unchanged)
+      Track B: EarlyFireDetector — detects PRE-FIRE heat anomalies
     """
 
-    FIRE_CLASSES  = {"fire", "smoke", "flame", "Fire", "Smoke"}  # adapt to model labels
+    FIRE_CLASSES = {"fire", "smoke", "flame", "Fire", "Smoke"}
 
     def __init__(self):
         cfg = DetectorConfig
@@ -202,34 +241,46 @@ class FireDetector:
             confirm_min  = 5,
             cooldown_sec = 30.0,
         ))
+        # Location is set per-alert (random NTU location) — initialise with
+        # first entry as default so AlertGenerator has something to start with
+        _default_loc = NTU_LOCATIONS[0]
         self.generator     = AlertGenerator(
             camera_id         = cfg.CAMERA_ID,
-            location          = LocationConfig(cfg.BUILDING, cfg.FLOOR, cfg.ZONE),
+            location          = LocationConfig(
+                _default_loc["building"],
+                _default_loc["floor"],
+                _default_loc["zone"],
+            ),
             use_claude_vision = cfg.USE_CLAUDE_VISION,
         )
         self.metrics       = EdgeMetrics()
-        self.alert_queue:  queue.Queue = queue.Queue(maxsize=100)
 
+        # ── NEW: Early pre-fire anomaly detector ──────────────────────────────
+        self.early_detector = EarlyFireDetector()
+        self._last_early_warning: Optional[EarlyWarning] = None
+        # ─────────────────────────────────────────────────────────────────────
+
+        self.alert_queue:  queue.Queue = queue.Queue(maxsize=100)
         self._running      = False
         self._thread:      Optional[threading.Thread] = None
         self._latest_frame: Optional[np.ndarray] = None
-        self._latest_alert: Optional[Dict]       = None
-        self._stats        = {"total_frames": 0, "total_alerts": 0, "fps_avg": 0}
+        self._latest_alert: Optional[Dict]        = None
+        self._stats = {
+            "total_frames":         0,
+            "total_alerts":         0,
+            "total_early_warnings": 0,   # ← NEW counter
+            "fps_avg":              0,
+        }
 
-        logger.info("FireDetector ready.")
+        logger.info("FireDetector ready (YOLO + EarlyFireDetector).")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def run(self, source: str, display: bool = True):
-        """
-        Blocking run — processes video source until end or KeyboardInterrupt.
-        source: file path, RTSP URL, or '0'/'1' for webcam index.
-        """
-        cap = self._open_source(source)
+        cap       = self._open_source(source)
         logger.info(f"Stream opened: {source}")
-
-        frame_idx   = 0
-        cfg         = DetectorConfig
+        frame_idx = 0
+        cfg       = DetectorConfig
 
         try:
             while True:
@@ -242,31 +293,66 @@ class FireDetector:
                 frame_idx += 1
                 self._stats["total_frames"] = frame_idx
 
-                # Skip frames for performance
                 if frame_idx % cfg.FRAME_SKIP != 0:
                     continue
 
-                # ── Inference ─────────────────────────────────────────────────
+                # ════════════════════════════════════════════════════════════
+                # TRACK B — Early pre-fire detection (runs FIRST, no model needed)
+                # ════════════════════════════════════════════════════════════
+                early_warning = self.early_detector.update(frame, frame_idx)
+                self._last_early_warning = early_warning   # store for _draw()
+
+                if early_warning and early_warning.should_alert:
+                    self._stats["total_early_warnings"] += 1
+                    early_loc = pick_random_ntu_location()
+                    logger.warning(
+                        f"⚠️  EARLY_WARNING [{early_warning.anomaly_type}] "
+                        f"score={early_warning.anomaly_score:.2f} "
+                        f"signals={early_warning.active_signals} "
+                        f"@ {early_loc['building']}"
+                    )
+                    # Publish to fire_event bus at EARLY_WARNING severity
+                    # (teammates can filter on risk_level == "EARLY_WARNING")
+                    fire_event.publish(
+                        building   = early_loc["building"],
+                        floor      = early_loc["floor"],
+                        zone       = early_loc["zone"],
+                        confidence = early_warning.anomaly_score,
+                        risk_level = "EARLY_WARNING",
+                        camera_id  = DetectorConfig.CAMERA_ID,
+                    )
+
+                # ════════════════════════════════════════════════════════════
+                # TRACK A — YOLOv8n fire/smoke detection (UNCHANGED)
+                # ════════════════════════════════════════════════════════════
                 detections = self._infer(frame, frame_idx)
                 score      = self.scorer.update(detections)
                 m          = self.metrics.tick()
                 self._stats["fps_avg"] = m["fps_avg"]
 
-                # ── Log every 30 frames ───────────────────────────────────────
                 if frame_idx % 30 == 0:
+                    ew_score = early_warning.anomaly_score if early_warning else 0.0
                     logger.info(
                         f"Frame {frame_idx} | FPS {m['fps_current']} "
                         f"(avg {m['fps_avg']}) | CPU {m['cpu_pct']}% "
-                        f"| MEM {m['mem_mb']} MB | {score.summary()}"
+                        f"| MEM {m['mem_mb']} MB | {score.summary()} "
+                        f"| early_score={ew_score:.2f}"
                     )
 
-                # ── Alert ─────────────────────────────────────────────────────
                 if score.should_alert:
                     logger.warning(
                         f"🔥 ALERT [{score.risk_level}] "
                         f"conf={score.best_confidence:.2f} "
                         f"frames={score.positive_frames}/{score.window_size}"
                     )
+                    # Pick a random NTU location for this alert
+                    loc = pick_random_ntu_location()
+                    self.generator.update_location(
+                        building = loc["building"],
+                        floor    = loc["floor"],
+                        zone     = loc["zone"],
+                    )
+
                     alert = self.generator.generate(frame, score, m)
                     self._latest_alert = alert.to_dict()
                     self._stats["total_alerts"] += 1
@@ -274,11 +360,10 @@ class FireDetector:
                     if not self.alert_queue.full():
                         self.alert_queue.put(alert.to_dict())
 
-                    # ── Publish clean event to teammates ──────────────────────
                     fire_event.publish(
-                        building   = self.generator.location.building,
-                        floor      = self.generator.location.floor,
-                        zone       = self.generator.location.zone,
+                        building   = loc["building"],
+                        floor      = loc["floor"],
+                        zone       = loc["zone"],
                         confidence = score.best_confidence,
                         risk_level = score.risk_level,
                         camera_id  = DetectorConfig.CAMERA_ID,
@@ -288,7 +373,7 @@ class FireDetector:
                     print(alert.to_json())
                     print("═" * 60 + "\n")
 
-                # ── Display ───────────────────────────────────────────────────
+                # ── Display ───────────────────────────────────────────────
                 if display:
                     vis = self._draw(frame, detections, score, m)
                     cv2.imshow("SafeEdge — Fire Detection", vis)
@@ -304,7 +389,8 @@ class FireDetector:
                 cv2.destroyAllWindows()
             logger.info(
                 f"Finished — {frame_idx} frames | "
-                f"{self._stats['total_alerts']} alerts | "
+                f"{self._stats['total_alerts']} fire alerts | "
+                f"{self._stats['total_early_warnings']} early warnings | "
                 f"avg {self._stats['fps_avg']} FPS"
             )
 
@@ -312,7 +398,6 @@ class FireDetector:
         return {**self._stats, "latest_alert": self._latest_alert}
 
     def drain_alerts(self) -> List[Dict]:
-        """Drain all pending alerts from queue (non-blocking)."""
         alerts = []
         while not self.alert_queue.empty():
             try:
@@ -321,10 +406,9 @@ class FireDetector:
                 break
         return alerts
 
-    # ── Inference ─────────────────────────────────────────────────────────────
+    # ── Inference (UNCHANGED) ─────────────────────────────────────────────────
 
     def _infer(self, frame: np.ndarray, frame_idx: int) -> List[FrameDetection]:
-        """Run YOLOv8n and return FrameDetection list for this frame."""
         cfg      = DetectorConfig
         results  = self.model(
             frame,
@@ -334,7 +418,6 @@ class FireDetector:
             device  = cfg.DEVICE,
             verbose = False,
         )
-
         detections = []
         h, w = frame.shape[:2]
 
@@ -343,11 +426,8 @@ class FireDetector:
                 cls_id  = int(box.cls[0])
                 label   = self.model.names[cls_id].lower()
                 conf    = float(box.conf[0])
-
-                # Only pass fire/smoke classes
                 if not self._is_fire_class(label):
                     continue
-
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 detections.append(FrameDetection(
                     timestamp   = time.time(),
@@ -356,25 +436,24 @@ class FireDetector:
                     bbox        = [x1 / w, y1 / h, x2 / w, y2 / h],
                     frame_index = frame_idx,
                 ))
-
         return detections
 
     def _is_fire_class(self, label: str) -> bool:
         return any(kw in label for kw in ("fire", "smoke", "flame"))
 
-    # ── Visualisation ─────────────────────────────────────────────────────────
+    # ── Visualisation (extended with early warning overlay) ───────────────────
 
     def _draw(
         self,
-        frame:  np.ndarray,
-        dets:   List[FrameDetection],
-        score:  ScoreResult,
+        frame:   np.ndarray,
+        dets:    List[FrameDetection],
+        score:   ScoreResult,
         metrics: Dict,
     ) -> np.ndarray:
         vis = frame.copy()
         h, w = vis.shape[:2]
 
-        # Draw detection boxes
+        # Draw YOLO detection boxes (UNCHANGED)
         for det in dets:
             x1 = int(det.bbox[0] * w); y1 = int(det.bbox[1] * h)
             x2 = int(det.bbox[2] * w); y2 = int(det.bbox[3] * h)
@@ -386,7 +465,7 @@ class FireDetector:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
             )
 
-        # HUD overlay
+        # HUD overlay (UNCHANGED)
         risk_color = {
             "CRITICAL": (0, 0, 255),
             "HIGH":     (0, 100, 255),
@@ -403,15 +482,19 @@ class FireDetector:
             cv2.putText(vis, line, (10, 28 + i * 26),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, risk_color, 2)
 
-        # Alert banner
+        # YOLO fire alert banner (UNCHANGED)
         if score.should_alert:
             cv2.rectangle(vis, (0, h - 50), (w, h), (0, 0, 200), -1)
             cv2.putText(vis, f"🔥 {score.risk_level} — FIRE/SMOKE CONFIRMED",
                         (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
 
+        # ── NEW: Early warning overlay (orange, sits above YOLO banner) ───────
+        vis = self.early_detector.draw_overlay(vis, self._last_early_warning)
+        # ─────────────────────────────────────────────────────────────────────
+
         return vis
 
-    # ── Stream ────────────────────────────────────────────────────────────────
+    # ── Stream (UNCHANGED) ────────────────────────────────────────────────────
 
     def _open_source(self, source: str) -> cv2.VideoCapture:
         if source.isdigit():
@@ -458,13 +541,29 @@ def create_api(detector: FireDetector) -> FastAPI:
 
     @app.get("/alerts/drain")
     def drain_alerts():
-        """
-        Drain all pending alerts from queue.
-        Communication layer polls this endpoint.
-        """
         return {"alerts": detector.drain_alerts()}
 
-    register_routes(app)  # /fire endpoint for teammates
+    # ── NEW: early warning endpoint for teammates ─────────────────────────────
+    @app.get("/early-warning")
+    def early_warning():
+        """
+        Returns the latest early warning state.
+        Teammates can poll this alongside /fire to get advance notice.
+        """
+        ew = detector._last_early_warning
+        if not ew:
+            return {"early_warning_active": False}
+        return {
+            "early_warning_active": True,
+            "anomaly_type":   ew.anomaly_type,
+            "anomaly_score":  ew.anomaly_score,
+            "active_signals": ew.active_signals,
+            "confirm_count":  ew.confirm_count,
+            "timestamp":      ew.timestamp,
+        }
+    # ─────────────────────────────────────────────────────────────────────────
+
+    register_routes(app)
     return app
 
 
@@ -474,27 +573,23 @@ def create_api(detector: FireDetector) -> FastAPI:
 
 def main():
     parser = argparse.ArgumentParser(description="SafeEdge Fire Detector")
-    parser.add_argument("--input",   default="0",     help="Video source: file path, RTSP URL, or webcam index (0)")
-    parser.add_argument("--no-display", action="store_true", help="Disable live preview (headless mode)")
-    parser.add_argument("--serve",   action="store_true", help="Also run FastAPI server for communication layer")
-    parser.add_argument("--port",    default=8001, type=int, help="API server port")
+    parser.add_argument("--input",      default="0",   help="Video source")
+    parser.add_argument("--no-display", action="store_true")
+    parser.add_argument("--serve",      action="store_true")
+    parser.add_argument("--port",       default=8001, type=int)
     args = parser.parse_args()
 
     detector = FireDetector()
 
     if args.serve:
         api = create_api(detector)
-        # Run API in background thread
         def run_api():
             uvicorn.run(api, host=DetectorConfig.API_HOST, port=args.port, log_level="warning")
         t = threading.Thread(target=run_api, daemon=True)
         t.start()
         logger.info(f"API running at http://localhost:{args.port}")
 
-    detector.run(
-        source  = args.input,
-        display = not args.no_display,
-    )
+    detector.run(source=args.input, display=not args.no_display)
 
 
 if __name__ == "__main__":
