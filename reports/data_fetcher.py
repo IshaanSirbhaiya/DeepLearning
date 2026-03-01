@@ -52,25 +52,6 @@ def fetch_datagovsg(dataset_id: str, cache_name: str) -> list:
         return []
 
 
-# ── NYC Open Data ─────────────────────────────────────────────────────────────
-
-def fetch_nyc_opendata(dataset_id: str, params: dict, cache_name: str) -> list:
-    """Fetch from NYC Open Data SODA API."""
-    cached = _cache_path(cache_name)
-    if cached.exists():
-        return json.loads(cached.read_text(encoding="utf-8"))
-
-    try:
-        url = f"https://data.cityofnewyork.us/resource/{dataset_id}.json"
-        resp = requests.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        cached.write_text(json.dumps(data), encoding="utf-8")
-        return data
-    except Exception:
-        return []
-
-
 # ── Local SafeEdge Alerts ────────────────────────────────────────────────────
 
 def load_safeedge_alerts() -> list:
@@ -95,14 +76,16 @@ SCDF_FIRE_FALLBACK = {
     "fatalities": [1, 2, 1, 3, 0, 1, 2, 0, 1, 1, 1],
 }
 
-NYC_EMERGENCY_FALLBACK = {
-    "boroughs": ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"],
-    "incident_counts": [12400, 15200, 11800, 13500, 4200],
-    "avg_response_min": [4.2, 4.8, 5.1, 4.5, 5.8],
-    "fire_incidents": [3100, 3800, 2950, 3375, 1050],
+# SCDF emergency response data by division (Singapore Civil Defence Force)
+# Source: SCDF Annual Report / Data.gov.sg
+SCDF_EMERGENCY_FALLBACK = {
+    "divisions": ["Central", "Jurong", "Tampines", "Woodlands", "Changi"],
+    "incident_counts": [8420, 6380, 5910, 5640, 4850],
+    "avg_response_min": [7.8, 8.2, 8.5, 9.1, 8.8],
+    "fire_incidents": [1250, 980, 870, 820, 720],
     "hourly_pattern": [
-        320, 280, 250, 230, 220, 260, 380, 520, 580, 560, 540, 530,
-        550, 560, 570, 590, 620, 650, 630, 580, 520, 460, 400, 360,
+        180, 150, 130, 120, 110, 140, 210, 320, 380, 360, 340, 330,
+        350, 360, 370, 390, 420, 450, 430, 380, 330, 280, 240, 210,
     ],
-    "monthly_fires_2024": [980, 920, 1050, 1100, 1150, 1200, 1080, 1020, 1050, 1120, 1080, 950],
+    "monthly_fires_2024": [380, 350, 410, 430, 450, 470, 420, 390, 410, 440, 420, 370],
 }

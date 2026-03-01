@@ -42,6 +42,12 @@ def generate_narrative(section: str, data_summary: str, audience: str) -> str:
             max_tokens=300,
             temperature=0.4,
         )
-        return resp.choices[0].message.content.strip()
+        text = resp.choices[0].message.content.strip()
+        # Sanitize unicode characters that fpdf2 Helvetica can't render
+        text = text.replace("\u2014", "-").replace("\u2013", "-")   # em/en dash
+        text = text.replace("\u2018", "'").replace("\u2019", "'")   # smart quotes
+        text = text.replace("\u201c", '"').replace("\u201d", '"')
+        text = text.replace("\u2026", "...").replace("\u2022", "-") # ellipsis, bullet
+        return text
     except Exception as e:
         return data_summary
