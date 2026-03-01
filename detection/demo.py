@@ -37,24 +37,32 @@ NTU_LOCATIONS = [
         "floor":    2,
         "zone":     "Collaboration Studio",
         "campus":   "NTU",
+        "lat":      1.34321,
+        "lng":      103.68275,
     },
     {
         "building": "Northspine",
         "floor":    1,
         "zone":     "Food Court",
         "campus":   "NTU",
+        "lat":      1.3431,
+        "lng":      103.6805,
     },
     {
         "building": "School of Chemical and Biomedical Engineering",
         "floor":    3,
         "zone":     "Laboratory Wing",
         "campus":   "NTU",
+        "lat":      1.34572,
+        "lng":      103.67855,
     },
     {
         "building": "Hall of Residence 2",
         "floor":    4,
         "zone":     "Common Kitchen",
         "campus":   "NTU",
+        "lat":      1.3547,
+        "lng":      103.6853,
     },
 ]
 

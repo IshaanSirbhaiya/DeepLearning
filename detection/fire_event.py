@@ -9,17 +9,13 @@ This module exposes two things:
 
 When fire is confirmed, teammates get exactly:
   {
-    "fire_detected": true,
-    "location": {
-      "building": "Block 4A",
-      "floor": 3,
-      "zone": "kitchen"
-    },
-    "confidence": 0.92,
-    "risk_level": "CRITICAL",
-    "timestamp": "2026-03-02T14:23:01+00:00",
-    "camera_id": "CAM_01",
-    "event_id": "EVT_001"
+    "latitude": 1.34321,
+    "longitude": 103.68275
+  }
+
+If no fire is detected:
+  {
+    "fire_detected": false
   }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -31,13 +27,11 @@ import requests, time
 while True:
     r = requests.get("http://localhost:8001/fire")
     data = r.json()
-    if data["fire_detected"]:
-        building = data["location"]["building"]
-        floor    = data["location"]["floor"]
-        zone     = data["location"]["zone"]
-        risk     = data["risk_level"]
-        print(f"🔥 FIRE at {building} Floor {floor} ({zone}) — {risk}")
-        # → trigger Telegram bot / run Dijkstra here
+    if "latitude" in data:
+        lat = data["latitude"]
+        lng = data["longitude"]
+        print(f"🔥 FIRE at lat={lat}, lng={lng}")
+        # → run Dijkstra, send Telegram, etc.
     time.sleep(2)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -47,7 +41,7 @@ TEAMMATE USAGE — Option B: Direct Import
 from fire_event import fire_event
 
 def on_fire(event):
-    print(f"FIRE at {event['location']['building']} floor {event['location']['floor']}")
+    print(f"FIRE at lat={event['latitude']}, lng={event['longitude']}")
     # → run Dijkstra, send Telegram, etc.
 
 fire_event.subscribe(on_fire)   # your callback fires instantly on detection
@@ -55,9 +49,19 @@ fire_event.subscribe(on_fire)   # your callback fires instantly on detection
 
 import threading
 import time
-import os
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
+
+
+# ── Reference: NTU hardcoded locations (selection happens in detector.py) ─────
+# These are the only 4 valid fire locations. detector.py picks one randomly
+# and passes the coordinates into publish(). Defined here for documentation.
+#
+#   The Hive                          lat=1.34321   lng=103.68275
+#   Northspine                        lat=1.3431    lng=103.6805
+#   School of Chemical & Biomed Eng   lat=1.34572   lng=103.67855
+#   Hall of Residence 2               lat=1.3547    lng=103.6853
+
 
 # ── Shared Fire Event Object ──────────────────────────────────────────────────
 
@@ -65,6 +69,9 @@ class FireEventBus:
     """
     Shared singleton. Detection layer writes to it.
     Teammates read from it via subscribe() or get_latest().
+
+    Output on fire: {"latitude": float, "longitude": float}
+    Output on no fire: {"fire_detected": False}
     """
 
     def __init__(self):
@@ -84,21 +91,21 @@ class FireEventBus:
         confidence: float,
         risk_level: str,
         camera_id:  str,
+        latitude:   float,
+        longitude:  float,
     ) -> Dict:
-        """Called internally by detector when fire is confirmed."""
+        """
+        Called internally by detector when fire is confirmed.
+        detector.py does the random NTU location selection and passes
+        the chosen lat/lng here. Only those two values are stored and
+        returned to teammates — nothing else.
+        """
         self._event_counter += 1
+
+        # Output payload — only lat/lng for teammates
         event = {
-            "fire_detected": True,
-            "location": {
-                "building": building,
-                "floor":    floor,
-                "zone":     zone,
-            },
-            "confidence":  round(confidence, 4),
-            "risk_level":  risk_level,           # "WARNING" | "HIGH" | "CRITICAL"
-            "timestamp":   datetime.now(timezone.utc).isoformat(),
-            "camera_id":   camera_id,
-            "event_id":    f"EVT_{self._event_counter:04d}",
+            "latitude":  latitude,
+            "longitude": longitude,
         }
 
         with self._lock:
@@ -117,7 +124,8 @@ class FireEventBus:
 
     def get_latest(self) -> Dict:
         """
-        Returns latest fire event, or {"fire_detected": false} if none yet.
+        Returns latest fire event with only latitude + longitude,
+        or {"fire_detected": false} if no fire has been detected yet.
         Poll this every 2 seconds from your Telegram / mapping code.
         """
         with self._lock:
@@ -126,18 +134,18 @@ class FireEventBus:
         return {"fire_detected": False}
 
     def get_history(self, n: int = 10) -> List[Dict]:
-        """Last N fire events."""
+        """Last N fire events (each containing only latitude + longitude)."""
         with self._lock:
             return list(self._history[-n:])
 
     def subscribe(self, callback: Callable[[Dict], None]):
         """
         Register a callback — fires instantly when fire is detected.
-        callback receives the fire event dict.
+        Callback receives {"latitude": float, "longitude": float}.
 
         Example:
             def on_fire(event):
-                send_telegram(event["location"]["building"])
+                run_dijkstra(event["latitude"], event["longitude"])
             fire_event.subscribe(on_fire)
         """
         self._subscribers.append(callback)
@@ -159,14 +167,13 @@ def register_routes(app):
     Call this from detector.py to add /fire endpoints to the FastAPI app.
     Already wired in — teammates just hit http://localhost:8001/fire
     """
-    from fastapi import HTTPException
 
     @app.get("/fire", summary="Get latest fire event")
     def get_fire():
         """
         Returns current fire state.
-        fire_detected=false  → no active fire
-        fire_detected=true   → fire confirmed, includes location
+        No fire  → {"fire_detected": false}
+        Fire     → {"latitude": float, "longitude": float}
         """
         return fire_event.get_latest()
 
@@ -200,12 +207,14 @@ if __name__ == "__main__":
     def simulate():
         time.sleep(3)
         event = fire_event.publish(
-            building   = "Block 4A",
-            floor      = 3,
-            zone       = "kitchen",
+            building   = "The Hive",
+            floor      = 2,
+            zone       = "Collaboration Studio",
             confidence = 0.92,
             risk_level = "CRITICAL",
             camera_id  = "CAM_01",
+            latitude   = 1.34321,
+            longitude  = 103.68275,
         )
         print(f"\n🔥 PUBLISHED: {event}\n")
 

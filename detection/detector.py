@@ -102,41 +102,43 @@ NTU_LOCATIONS = [
         "floor":    2,
         "zone":     "Collaboration Studio",
         "campus":   "NTU",
-        "lat":      1.3454,
-        "lng":      103.6818,
+        "lat":      1.34321,
+        "lng":      103.68275,
     },
     {
         "building": "Northspine",
         "floor":    1,
         "zone":     "Food Court",
         "campus":   "NTU",
-        "lat":      1.3483,
-        "lng":      103.6831,
+        "lat":      1.3431,
+        "lng":      103.6805,
     },
     {
         "building": "School of Chemical and Biomedical Engineering",
         "floor":    3,
         "zone":     "Laboratory Wing",
         "campus":   "NTU",
-        "lat":      1.3412,
-        "lng":      103.6801,
+        "lat":      1.34572,
+        "lng":      103.67855,
     },
     {
         "building": "Hall of Residence 2",
         "floor":    4,
         "zone":     "Common Kitchen",
         "campus":   "NTU",
-        "lat":      1.3467,
-        "lng":      103.6795,
+        "lat":      1.3547,
+        "lng":      103.6853,
     },
 ]
 
 
 def pick_random_ntu_location() -> dict:
     """
-    Randomly select one NTU campus location for demo purposes.
-    Called once per confirmed fire alert — teammates receive whichever
-    location is chosen in the fire_event payload.
+    Randomly select one of the 4 hardcoded NTU campus locations.
+    Called once per confirmed fire event. The returned dict (including
+    lat/lng) is the single source of truth — passed to both the
+    AlertGenerator (for logs/snapshots) and fire_event.publish()
+    (for teammate output). One pick, used everywhere.
     """
     import random
     loc = random.choice(NTU_LOCATIONS)
@@ -327,6 +329,8 @@ class FireDetector:
                         confidence = early_warning.anomaly_score,
                         risk_level = "EARLY_WARNING",
                         camera_id  = DetectorConfig.CAMERA_ID,
+                        latitude   = early_loc["lat"],
+                        longitude  = early_loc["lng"],
                     )
 
                 # ════════════════════════════════════════════════════════════
@@ -374,6 +378,8 @@ class FireDetector:
                         confidence = score.best_confidence,
                         risk_level = score.risk_level,
                         camera_id  = DetectorConfig.CAMERA_ID,
+                        latitude   = loc["lat"],
+                        longitude  = loc["lng"],
                     )
 
                     print("\n" + "═" * 60)
