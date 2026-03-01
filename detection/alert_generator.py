@@ -17,8 +17,12 @@ from typing import List, Optional, Dict, Any
 import cv2
 import numpy as np
 
-from detection.risk_scorer import ScoreResult, RiskLevel
-from detection.privacy_filter import PrivacyFilter
+try:
+    from detection.risk_scorer import ScoreResult, RiskLevel
+    from detection.privacy_filter import PrivacyFilter
+except ImportError:
+    from risk_scorer import ScoreResult, RiskLevel
+    from privacy_filter import PrivacyFilter
 
 logger = logging.getLogger("SafeEdge.AlertGenerator")
 

@@ -34,6 +34,10 @@ import psutil
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv()                                                # cwd .env
+load_dotenv(Path(__file__).parent.parent / ".env")           # project root .env
 
 # ── Local imports (works from both project root and detection/ directory) ─────
 try:
@@ -258,7 +262,7 @@ class FireDetector:
                 _default_loc["floor"],
                 _default_loc["zone"],
             ),
-            use_claude_vision = cfg.USE_CLAUDE_VISION,
+            use_vision_api    = cfg.USE_CLAUDE_VISION,
         )
         self.metrics       = EdgeMetrics()
 
