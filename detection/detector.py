@@ -30,6 +30,7 @@ from typing import Optional, List, Dict, Tuple
 import cv2
 import numpy as np
 import psutil
+import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +76,9 @@ class DetectorConfig:
     # API
     API_HOST            = "0.0.0.0"
     API_PORT            = 8001
+
+    # Backend URL (for forwarding alerts)
+    BACKEND_URL         = os.getenv("BACKEND_URL", "http://localhost:8000")
 
     # OpenAI Vision (optional enrichment — requires OPENAI_API_KEY)
     USE_VISION_API   = os.getenv("USE_VISION_API", "false").lower() == "true"
@@ -274,6 +278,9 @@ class FireDetector:
                     if not self.alert_queue.full():
                         self.alert_queue.put(alert.to_dict())
 
+                    # Forward alert to backend
+                    self._forward_to_backend(alert.to_dict())
+
                     print("\n" + "═" * 60)
                     print(alert.to_json())
                     print("═" * 60 + "\n")
@@ -310,6 +317,26 @@ class FireDetector:
             except queue.Empty:
                 break
         return alerts
+
+    # ── Backend Forwarding ──────────────────────────────────────────────────
+
+    def _forward_to_backend(self, alert_dict: Dict):
+        """POST alert to the backend server (fire-and-forget, non-blocking)."""
+        def _post():
+            try:
+                url = f"{DetectorConfig.BACKEND_URL}/alert"
+                resp = requests.post(url, json=alert_dict, timeout=5)
+                if resp.ok:
+                    data = resp.json()
+                    logger.info(f"Alert forwarded to backend: id={data.get('alert_id')} summary={data.get('summary', '')[:80]}")
+                else:
+                    logger.warning(f"Backend returned {resp.status_code}: {resp.text[:200]}")
+            except requests.ConnectionError:
+                logger.warning("Backend not reachable — alert stored locally only")
+            except Exception as e:
+                logger.warning(f"Failed to forward alert: {e}")
+
+        threading.Thread(target=_post, daemon=True).start()
 
     # ── Inference ─────────────────────────────────────────────────────────────
 

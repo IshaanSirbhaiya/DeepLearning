@@ -105,10 +105,11 @@ class RiskScorer:
         if confirmed and dual_present and self.cfg.dual_class_boost:
             risk_level = self._boost(risk_level)
 
+        alert_in_cooldown = False
         if confirmed:
             now = time.time()
-            in_cooldown = (now - self._last_alert_time) < self.cfg.cooldown_sec
-            if not in_cooldown:
+            alert_in_cooldown = (now - self._last_alert_time) < self.cfg.cooldown_sec
+            if not alert_in_cooldown:
                 self._last_alert_time = now
                 self.total_alerts += 1
 
@@ -121,8 +122,7 @@ class RiskScorer:
             window_size=self.cfg.window_size,
             frame_index=self._frame_idx,
             dual_class=dual_present,
-            in_cooldown=(time.time() - self._last_alert_time) < self.cfg.cooldown_sec
-                        if confirmed else False,
+            in_cooldown=alert_in_cooldown,
         )
 
     def reset(self):
