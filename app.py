@@ -264,7 +264,7 @@ def fetch_telemetry_data():
             "counts": counts,
             "sos_locations": sos_locations,
             "recent_logs": recent_logs,
-            "fire_zone": fire_zone or {"lat": 1.3437, "lon": 103.6801, "radius": 100, "incident_name": "The Hive Fire"}
+            "fire_zone": fire_zone or {"lat": 1.34321, "lon": 103.68275, "radius": 100, "incident_name": "The Hive Fire"}
         }
         
     except Exception as e:

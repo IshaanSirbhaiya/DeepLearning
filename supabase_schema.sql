@@ -33,4 +33,4 @@ CREATE POLICY "Allow everything for demo" ON public.hazards
 
 -- Example insert:
 -- INSERT INTO hazards (name, latitude, longitude, status)
--- VALUES ('The Hive Fire', 1.3437, 103.6801, 'active');
+-- VALUES ('The Hive Fire', 1.34321, 103.68275, 'active');
