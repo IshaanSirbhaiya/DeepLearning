@@ -2,8 +2,12 @@
 .env
 __pycache__/
 *.pyc
-.venv/
+*.py[cod]
+*.egg-info/
+dist/
+build/
 venv/
+.venv/
 
 # Old PRDs (not part of codebase)
 Ishaan FireSense_AI_PRD.docx
@@ -17,6 +21,7 @@ PRD SafeEdge - Edge-Based Fire Safe.txt
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Alerts output
 alerts/*.jpg
@@ -26,9 +31,15 @@ alerts/*.png
 # Models (large files - download via script)
 detection/models/*.pt
 detection/models/*.onnx
+detection/models/.cache/
 !detection/models/.gitkeep
 
 # Testbench videos (large files)
 testbench/*.mp4
 testbench/*.avi
 !testbench/.gitkeep
+
+# Database
+*.db
+*.db-wal
+*.db-shm
