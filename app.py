@@ -191,16 +191,21 @@ def fetch_telemetry_data():
         counts = {"total": len(users), "secure": 0, "safe": 0, "unaccounted": 0, "sos": 0}
         sos_locations = []
         recent_logs = []
-        
+
         # Sort users by updated_at descending to mimic recent logs
         sorted_users = sorted(users, key=lambda x: x.get('last_update', ''), reverse=True)
-        
+
         for u in users:
             stat = str(u.get("status", "")).lower()
+
+            # Treat 'endangered' as 'sos' for counting and mapping
+            if stat == "endangered":
+                stat = "sos"
+
             if stat in counts:
                 counts[stat] += 1
-                
-            # Grab SOS coordinates
+
+            # Grab SOS/endangered coordinates
             if stat == "sos":
                 lat = u.get("latitude")
                 lon = u.get("longitude")
@@ -217,6 +222,7 @@ def fetch_telemetry_data():
             stat = str(u.get("status", "")).lower()
             event_map = {
                 "sos": "SOS INITIATED",
+                "endangered": "SOS INITIATED",
                 "safe": "Arrived at verified Assembly",
                 "secure": "Mesh Node Connection Strong",
                 "unaccounted": "In transit/Connection weak"
