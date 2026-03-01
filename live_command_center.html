@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NTU Live Incident Command</title>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        #ui-panel {
+            position: absolute; top: 20px; left: 60px; z-index: 1000;
+            background: rgba(24, 24, 27, 0.9); color: white;
+            padding: 20px; border-radius: 12px; border: 1px solid #3f3f46;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .status-dot { display: inline-block; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; margin-right: 8px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2 style="margin: 0 0 10px 0; font-size: 1.2rem;">System Status: <span style="color: #ef4444;">ACTIVE FIRE</span></h2>
+        <p style="margin: 0; color: #a1a1aa;"><span class="status-dot"></span>Live Tracking Radar Online</p>
+    </div>
+
+    <div id="map"></div>
+
+<script>
+    // 1. Initialize the Base Map (Centered on NTU)
+    const map = L.map('map').setView([1.3440, 103.6805], 16);
+    
+    // SWITCHED TO LIGHT MODE (Standard OpenStreetMap)
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // Supabase Configuration
+    const SUPABASE_URL = "https://jyuxqhkutlblnzrutuey.supabase.co/rest/v1";
+    const SUPABASE_KEY = "sb_publishable_KuMdlRMDYfFELn8br7zYWQ_5PRFJsU6";
+    const headers = { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY };
+
+    let mapLayers = []; // Keep track of markers to clear on refresh
+
+    async function fetchLiveData() {
+        try { // <--- THIS MAKES THE CATCH WORK
+            
+            mapLayers.forEach(layer => map.removeLayer(layer));
+            mapLayers = [];
+
+            // 2. Fetch and Draw the Fire & Safe Zones (Hazards Table)
+            const hazardRes = await fetch(`${SUPABASE_URL}/hazards?select=*`, { headers });
+            const hazards = await hazardRes.json();
+            
+            hazards.forEach(h => {
+                if (h.status === 'active') {
+                    // Draw Fire Pin
+                    const firePin = L.marker([h.latitude, h.longitude]).addTo(map).bindPopup(`<b>🔥 ${h.name}</b>`);
+                    const fireRadius = L.circle([h.latitude, h.longitude], { color: 'red', fillOpacity: 0.2, radius: 80 }).addTo(map);
+                    mapLayers.push(firePin, fireRadius);
+
+                    // Draw the 4 Dynamic Safe Zones
+                    const offset = 0.0045; 
+                    const safePoints = [
+                        { name: "North Evac Point", lat: h.latitude + offset, lng: h.longitude },
+                        { name: "South Evac Point", lat: h.latitude - offset, lng: h.longitude },
+                        { name: "East Evac Point", lat: h.latitude, lng: h.longitude + offset },
+                        { name: "West Evac Point", lat: h.latitude, lng: h.longitude - offset }
+                    ];
+
+                    safePoints.forEach(sp => {
+                        const safeMarker = L.circleMarker([sp.lat, sp.lng], {
+                            color: 'green', fillColor: '#22c55e', fillOpacity: 0.9, radius: 10
+                        }).addTo(map).bindPopup(`<b>🟢 SAFE ZONE</b><br>${sp.name}`);
+                        mapLayers.push(safeMarker);
+                    });
+                }
+            });
+
+            // 3. Fetch and Draw the Users (Evacuees Table)
+            const userRes = await fetch(`${SUPABASE_URL}/evacuees?select=*`, { headers });
+            const users = await userRes.json();
+
+            users.forEach(u => {
+                if (u.location_link) {
+                    const coordsPart = u.location_link.split('/2')[1]; 
+                    const lat = parseFloat(coordsPart.split(',')[0]);
+                    const lng = parseFloat(coordsPart.split(',')[1]);
+
+                    const pinColor = u.status === 'endangered' ? 'red' : 'green';
+                    const userCircle = L.circleMarker([lat, lng], {
+                        color: pinColor, fillColor: pinColor, fillOpacity: 0.8, radius: 8
+                    }).addTo(map).bindPopup(`<b>${u.name}</b><br>Status: ${u.status}`);
+                    
+                    mapLayers.push(userCircle);
+                }
+            });
+
+        } catch (error) { 
+            console.error("Database Sync Error:", error); 
+        }
+    } // <--- THIS FINALLY CLOSES THE FUNCTION!
+
+    // Run immediately, then check for updates every 3 seconds
+    fetchLiveData();
+    setInterval(fetchLiveData, 3000);
+</script>
+</html>
