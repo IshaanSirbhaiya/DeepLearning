@@ -33,7 +33,7 @@ if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
     USE_MOCK_DATA = False
 else:
     # Use robust mock data if no Supabase credentials exist yet
-    USE_MOCK_DATA = True
+    USE_MOCK_DATA = False
 
 # ── CSS (Modern Light Mode Dashboard) ──────────────────────────────────────────
 
@@ -194,7 +194,7 @@ def fetch_telemetry_data():
             fire_zone = None
 
         # 1. Fetch all users to do counting and map plotting
-        res = supabase.table("users").select("*").execute()
+        res = supabase.table("evacuees").select("*").execute()
         users = res.data
         
         counts = {"total": len(users), "secure": 0, "safe": 0, "unaccounted": 0, "sos": 0}
@@ -202,7 +202,7 @@ def fetch_telemetry_data():
         recent_logs = []
         
         # Sort users by updated_at descending to mimic recent logs
-        sorted_users = sorted(users, key=lambda x: x.get('updated_at', x.get('created_at', '')), reverse=True)
+        sorted_users = sorted(users, key=lambda x: x.get('last_update', ''), reverse=True)
         
         for u in users:
             stat = str(u.get("status", "")).lower()
@@ -211,14 +211,14 @@ def fetch_telemetry_data():
                 
             # Grab SOS coordinates
             if stat == "sos":
-                lat = u.get("lat")
-                lon = u.get("lon")
+                lat = u.get("latitude")
+                lon = u.get("longitude")
                 if lat and lon:  # Only map if they have coordinates
                     sos_locations.append({
-                        "uid": str(u.get("id", "Unknown")),
+                        "uid": str(u.get("name") or u.get("chat_id", "Unknown")),
                         "lat": float(lat),
                         "lon": float(lon),
-                        "time": u.get("updated_at", "Just now")[:16].replace("T", " ")
+                        "time": str(u.get("last_update", "Just now"))[:16].replace("T", " ")
                     })
                     
         # Populate live feed from 10 most recently updated rows
@@ -231,10 +231,10 @@ def fetch_telemetry_data():
                 "unaccounted": "In transit/Connection weak"
             }
             recent_logs.append({
-                "uid": f"user_{str(u.get('id', 'x'))[:4]}",
+                "uid": str(u.get("name") or u.get("chat_id", "Unknown"))[:20],
                 "event": event_map.get(stat, "Status Update"),
                 "status": stat,
-                "time": u.get("updated_at", "Just now")[:16].replace("T", " ")
+                "time": str(u.get("last_update", "Just now"))[:16].replace("T", " ")
             })
             
         return {
