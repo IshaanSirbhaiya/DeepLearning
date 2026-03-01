@@ -25,8 +25,12 @@ desktop.ini
 
 # Alerts output
 alerts/*.jpg
+alerts/*.json
 alerts/*.png
 !alerts/.gitkeep
+detection/alerts/*.jpg
+detection/alerts/*.json
+!detection/alerts/.gitkeep
 
 # Models (large files - download via script)
 detection/models/*.pt

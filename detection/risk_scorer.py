@@ -33,36 +33,19 @@ class FrameDetection:
 
 @dataclass
 class ScorerConfig:
-    # Confidence thresholds
     ignore_below:   float = 0.50
     warning_above:  float = 0.50
     high_above:     float = 0.70
     critical_above: float = 0.90
-
-    # Multi-frame confirmation window
-    window_size:  int = 8    # look at last N frames
-    confirm_min:  int = 5    # need M positives in that window
-
-    # How long (seconds) a confirmed alert stays active before auto-reset
-    cooldown_sec: float = 30.0
-
-    # Boost: if BOTH fire AND smoke detected together → push risk up one level
+    window_size:  int = 8
+    confirm_min:  int = 5
+    cooldown_sec: float = 5.0
     dual_class_boost: bool = True
 
 
 # ─── Risk Scorer ─────────────────────────────────────────────────────────────
 
 class RiskScorer:
-    """
-    Stateful multi-frame fire risk scorer.
-
-    Usage:
-        scorer = RiskScorer()
-        result = scorer.update(detections_this_frame)
-        if result.confirmed:
-            print(result.risk_level, result.best_confidence)
-    """
-
     def __init__(self, config: Optional[ScorerConfig] = None):
         self.cfg = config or ScorerConfig()
         self._window: Deque[Optional[FrameDetection]] = deque(maxlen=self.cfg.window_size)
@@ -71,13 +54,7 @@ class RiskScorer:
         self._consecutive_empty: int = 0
         self.total_alerts: int = 0
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     def update(self, detections: List[FrameDetection]) -> "ScoreResult":
-        """
-        Call once per frame with all detections from that frame.
-        Returns a ScoreResult describing current risk state.
-        """
         self._frame_idx += 1
         best = self._best_detection(detections)
 
@@ -101,39 +78,36 @@ class RiskScorer:
         confirmed    = positive_n >= self.cfg.confirm_min
         dual_present = self._dual_class_present()
 
-        # Apply dual-class boost (smoke + fire together = higher certainty)
         if confirmed and dual_present and self.cfg.dual_class_boost:
             risk_level = self._boost(risk_level)
 
-        alert_in_cooldown = False
+        # Check cooldown BEFORE updating _last_alert_time
+        should_fire = False
         if confirmed:
             now = time.time()
-            alert_in_cooldown = (now - self._last_alert_time) < self.cfg.cooldown_sec
-            if not alert_in_cooldown:
+            in_cooldown = (now - self._last_alert_time) < self.cfg.cooldown_sec
+            if not in_cooldown:
                 self._last_alert_time = now
                 self.total_alerts += 1
+                should_fire = True
 
         return ScoreResult(
-            confirmed=confirmed,
-            risk_level=risk_level,
-            best_confidence=best.confidence,
-            best_detection=best,
-            positive_frames=positive_n,
-            window_size=self.cfg.window_size,
-            frame_index=self._frame_idx,
-            dual_class=dual_present,
-            in_cooldown=alert_in_cooldown,
+            confirmed        = confirmed,
+            risk_level       = risk_level,
+            best_confidence  = best.confidence,
+            best_detection   = best,
+            positive_frames  = positive_n,
+            window_size      = self.cfg.window_size,
+            frame_index      = self._frame_idx,
+            dual_class       = dual_present,
+            in_cooldown      = not should_fire if confirmed else False,
         )
 
     def reset(self):
-        """Clear window — call when scene changes or incident resolved."""
         self._window.clear()
         self._consecutive_empty = 0
 
-    # ── Internals ─────────────────────────────────────────────────────────────
-
     def _best_detection(self, dets: List[FrameDetection]) -> Optional[FrameDetection]:
-        """Return the highest-confidence detection above ignore threshold."""
         valid = [d for d in dets if d.confidence >= self.cfg.ignore_below]
         return max(valid, key=lambda d: d.confidence) if valid else None
 
@@ -150,7 +124,6 @@ class RiskScorer:
         return sum(1 for d in self._window if d is not None)
 
     def _dual_class_present(self) -> bool:
-        """Check if both fire and smoke appear in current window."""
         labels = {d.label for d in self._window if d is not None}
         return "fire" in labels and "smoke" in labels
 
@@ -176,7 +149,6 @@ class ScoreResult:
 
     @property
     def should_alert(self) -> bool:
-        """True if confirmed AND not in cooldown — i.e. actually send alert."""
         return self.confirmed and not self.in_cooldown
 
     def summary(self) -> str:

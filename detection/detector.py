@@ -39,6 +39,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from detection.risk_scorer    import RiskScorer, ScorerConfig, FrameDetection, ScoreResult
 from detection.privacy_filter import PrivacyFilter
 from detection.alert_generator import AlertGenerator, LocationConfig
+from detection.fire_event      import fire_event, register_routes
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -204,7 +205,7 @@ class FireDetector:
         self.scorer        = RiskScorer(ScorerConfig(
             window_size  = 8,
             confirm_min  = 5,
-            cooldown_sec = 30.0,
+            cooldown_sec = 5.0,
         ))
         self.generator     = AlertGenerator(
             camera_id         = cfg.CAMERA_ID,
@@ -280,6 +281,16 @@ class FireDetector:
 
                     # Forward alert to backend
                     self._forward_to_backend(alert.to_dict())
+
+                    # Publish clean event to teammates
+                    fire_event.publish(
+                        building   = self.generator.location.building,
+                        floor      = self.generator.location.floor,
+                        zone       = self.generator.location.zone,
+                        confidence = score.best_confidence,
+                        risk_level = score.risk_level,
+                        camera_id  = DetectorConfig.CAMERA_ID,
+                    )
 
                     print("\n" + "═" * 60)
                     print(alert.to_json())
@@ -481,6 +492,7 @@ def create_api(detector: FireDetector) -> FastAPI:
         """
         return {"alerts": detector.drain_alerts()}
 
+    register_routes(app)  # /fire endpoint for teammates
     return app
 
 
