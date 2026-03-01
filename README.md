@@ -6,6 +6,16 @@ SafeEdge upgrades existing CCTV cameras with lightweight, on-device AI to detect
 
 > **Why SafeEdge?** Singapore experiences 3,000+ fire incidents annually (SCDF). Traditional smoke detectors take 30-90 seconds to trigger. The 2024 Singtel outage took down 995/999 emergency lines for hours. SafeEdge detects fire in under 1 second, works fully offline, and extends the evacuation window by 30-120 seconds.
 
+## The Problem We Solve
+
+When a fire breaks out today, a smoke detector eventually triggers an alarm - but someone must **manually investigate** to confirm whether it's real. This verification step takes 2-5 minutes, during which the fire grows and escape routes become compromised. Only after manual confirmation do residents get notified, and evacuation is uncoordinated - people panic, stampede, and don't know the safest route out.
+
+**SafeEdge eliminates this bottleneck entirely.** Our AI detects fire visually, confirms it with a second AI opinion, and triggers coordinated evacuation - all within 5 seconds. By the time a human would have manually reached the scene to check, SafeEdge has already confirmed the fire, notified every resident via Telegram with the optimal evacuation route, and the command dashboard is tracking who has reached safety and who still needs rescue. No new hardware required - it runs on existing CCTV cameras.
+
+Our team discovered this problem by analyzing Singapore's emergency response data on Data.gov.sg. Fire emerged as one of the most frequent and preventable hazards, with over 3,000 incidents annually. The October 2024 Singtel outage - which took down 995/999 emergency lines - confirmed that any solution must work offline, without depending on centralized telecom infrastructure.
+
+> **Full documentation:** See [`docs/SafeEdge_Documentation.pdf`](docs/SafeEdge_Documentation.pdf) for methodology, design trade-offs, testing procedures, observations, and IEEE citations.
+
 ## Key Features
 
 - **Dual-track fire detection** - YOLOv8n (ML) + EarlyFireDetector (optical flow + heat shimmer + haze analysis)
