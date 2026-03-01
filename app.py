@@ -206,7 +206,8 @@ def fetch_telemetry_data():
                     "radius": 100,
                     "incident_name": fire_row.get("name", "Fire Incident"),
                 }
-        except Exception:
+        except Exception as fire_err:
+            st.warning(f"⚠️ Could not fetch hazard from database: {fire_err}")
             fire_zone = None
 
         # 1. Fetch all users to do counting and map plotting
@@ -263,7 +264,7 @@ def fetch_telemetry_data():
             "counts": counts,
             "sos_locations": sos_locations,
             "recent_logs": recent_logs,
-            "fire_zone": fire_zone or {"lat": 1.3450, "lon": 103.6825, "radius": 100, "incident_name": "Fallback Demo Fire"}
+            "fire_zone": fire_zone or {"lat": 1.3437, "lon": 103.6801, "radius": 100, "incident_name": "The Hive Fire"}
         }
         
     except Exception as e:
