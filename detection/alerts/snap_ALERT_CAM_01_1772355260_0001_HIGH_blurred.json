@@ -1,0 +1,24 @@
+{
+  "alert_id": "ALERT_CAM_01_1772355260_0001",
+  "camera_id": "CAM_01",
+  "event": "fire_detected",
+  "confidence": 0.8236,
+  "risk_score": "HIGH",
+  "timestamp": "2026-03-01T08:54:21.147758+00:00",
+  "location": {
+    "building": "Block 4A",
+    "floor": 1,
+    "zone": "unknown"
+  },
+  "snapshot_path": "alerts/snap_ALERT_CAM_01_1772355260_0001_HIGH_blurred.jpg",
+  "positive_frames": 5,
+  "window_size": 8,
+  "dual_class": false,
+  "claude_analysis": null,
+  "edge_metrics": {
+    "fps_current": 11.2,
+    "fps_avg": 7.7,
+    "cpu_pct": 520.8,
+    "mem_mb": 490.2
+  }
+}
