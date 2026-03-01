@@ -11,7 +11,7 @@ import requests
 import osmnx as ox
 import networkx as nx
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import math
 from dotenv import load_dotenv
 from pathlib import Path
@@ -28,6 +28,19 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://jyuxqhkutlblnzrutuey.supabase.
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_KuMdlRMDYfFELn8br7zYWQ_5PRFJsU6")
 
 DETECTION_API = os.getenv("DETECTION_API", "http://localhost:8001")
+
+# 9 Official NTU Assembly Areas
+SAFE_ZONES = {
+    "North Spine Plaza":          (1.3468, 103.6810),
+    "South Spine Plaza":          (1.3425, 103.6832),
+    "Sports & Rec Centre (SRC)":  (1.3496, 103.6835),
+    "Yunnan Garden (Open Field)": (1.3458, 103.6858),
+    "Hall 1-3 Field":             (1.3540, 103.6855),
+    "Innovation Centre Carpark":  (1.3448, 103.6785),
+    "The Arc (North Spine CP-E)": (1.3475, 103.6800),
+    "CCEB Assembly (CW4)":        (1.3435, 103.6870),
+    "CCDS Assembly (N3 Carpark)": (1.3460, 103.6790),
+}
 
 # --- 2. ENGINE MATH ---
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -78,7 +91,7 @@ def get_fire_location():
     return 1.34321, 103.68275, "The Hive"
 
 
-# --- 3. SYSTEM SETUP (DYNAMIC PERIMETERS) ---
+# --- 3. SYSTEM SETUP ---
 print("1. Loading NTU Map Engine...")
 ntu_center = (1.3460, 103.6810)
 G = ox.graph_from_point(ntu_center, dist=1500, network_type='walk')
@@ -87,28 +100,12 @@ print("2. Fetching fire location from detection system...")
 fire_lat, fire_lng, fire_building = get_fire_location()
 print(f"   -> Fire at: {fire_building} (lat={fire_lat}, lng={fire_lng})")
 
-print("3. Generating Dynamic Safe Perimeters...")
-offset = 0.0045  # ~500 meters
-
-dynamic_safe_points = {
-    "North Evac Point": (fire_lng, fire_lat + offset),
-    "South Evac Point": (fire_lng, fire_lat - offset),
-    "East Evac Point": (fire_lng + offset, fire_lat),
-    "West Evac Point": (fire_lng - offset, fire_lat)
-}
-
-safe_zones = {}
-for name, coords in dynamic_safe_points.items():
-    nearest_node = ox.distance.nearest_nodes(G, X=coords[0], Y=coords[1])
-    n_lat = G.nodes[nearest_node]['y']
-    n_lng = G.nodes[nearest_node]['x']
-
-    if calculate_distance(fire_lat, fire_lng, n_lat, n_lng) > 350:
-        safe_zones[name] = {
-            "coords": (n_lng, n_lat),
-            "node": nearest_node
-        }
-print(f"-> Secured {len(safe_zones)} dynamic rally points around the hazard.")
+# Map Safe Zones to physical walking nodes on the OpenStreetMap
+print("3. Mapping Safe Zones to walking network nodes...")
+safe_nodes = {}
+for name, coords in SAFE_ZONES.items():
+    safe_nodes[name] = ox.distance.nearest_nodes(G, X=coords[1], Y=coords[0])
+print(f"   -> Mapped {len(safe_nodes)} assembly areas.")
 
 print("4. Establishing 80-meter Quarantine Blast Radius...")
 danger_radius = 80
@@ -128,7 +125,6 @@ def handle_location(message):
     first = message.from_user.first_name if message.from_user.first_name else ""
     last = message.from_user.last_name if message.from_user.last_name else ""
     u_name = f"{first} {last}".strip()
-
     if not u_name:
         u_name = f"User_{message.from_user.id}"
 
@@ -137,58 +133,88 @@ def handle_location(message):
 
     status = "endangered" if dist <= 350 else "secure"
 
+    # Database payload
     user_gmaps_link = f"https://www.google.com/maps?q={u_lat},{u_lng}"
-
-    payload = {
-        "chat_id": chat_id,
-        "name": u_name,
-        "status": status,
-        "location_link": user_gmaps_link
-    }
-
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-    }
-    api_endpoint = f"{SUPABASE_URL}/rest/v1/evacuees"
+    payload = {"chat_id": chat_id, "name": u_name, "status": status, "location_link": user_gmaps_link}
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}
 
     try:
-        print(f"DEBUG: Pushing {u_name} via Direct REST API...")
-        response = requests.post(api_endpoint, json=payload, headers=headers)
-
+        response = requests.post(f"{SUPABASE_URL}/rest/v1/evacuees", json=payload, headers=headers)
         if response.status_code in [200, 201]:
             print(f"  Success: {u_name} synced to Command Center!")
         else:
             print(f"  API Rejected: {response.text}")
-
     except Exception as e:
-        print(f"  Critical Network Error: {e}")
+        print(f"  Network Error: {e}")
+
+    # Interactive buttons for status updates
+    interactive_buttons = InlineKeyboardMarkup()
+    interactive_buttons.add(InlineKeyboardButton("I have reached Safety", callback_data="mark_safe"))
+    interactive_buttons.add(InlineKeyboardButton("EMERGENCY RESCUE", callback_data="mark_emergency"))
 
     # Evacuation Response
-    hide_markup = telebot.types.ReplyKeyboardRemove()
     if status == "secure":
+        hide_markup = telebot.types.ReplyKeyboardRemove()
         bot.reply_to(message, f"STATUS: SAFE. Stay clear of {fire_building}.", reply_markup=hide_markup)
     else:
         u_node = ox.distance.nearest_nodes(G, X=u_lng, Y=u_lat)
         best_route, best_zone = None, ""
         shortest_dist = float('inf')
 
-        for name, data in safe_zones.items():
+        for name, node_id in safe_nodes.items():
             try:
-                d = nx.shortest_path_length(G, source=u_node, target=data["node"], weight='length')
+                d = nx.shortest_path_length(G, source=u_node, target=node_id, weight='length')
                 if d < shortest_dist:
-                    shortest_dist, best_route, best_zone = d, nx.shortest_path(G, source=u_node, target=data["node"], weight='length'), name
-            except:
+                    shortest_dist = d
+                    best_route = nx.shortest_path(G, source=u_node, target=node_id, weight='length')
+                    best_zone = name
+            except nx.NetworkXNoPath:
                 continue
 
         if best_route:
             step = max(1, len(best_route) // 4)
             waypoints = "|".join([f"{G.nodes[best_route[i]]['y']},{G.nodes[best_route[i]]['x']}" for i in range(step, len(best_route)-1, step)])
-            s_lng, s_lat = safe_zones[best_zone]["coords"]
+            s_lat, s_lng = SAFE_ZONES[best_zone]
             gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lng}&destination={s_lat},{s_lng}&waypoints={waypoints}&travelmode=walking"
-            bot.reply_to(message, f"ENDANGERED. Proceed to {best_zone}.\n<a href='{gmaps_link}'>Safe Route</a>", parse_mode="HTML", reply_markup=hide_markup)
+
+            msg_text = f"ENDANGERED.\nHazard: {fire_building}\n\nProceed immediately to <b>{best_zone}</b>.\n<a href='{gmaps_link}'>Open Safe Route</a>\n\n<i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
+            bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
+        else:
+            msg_text = f"ENDANGERED. Please move away from {fire_building} immediately.\n\n<i>Once you are clear, press the Safe button. Click on Emergency if you need urgent help.</i>"
+            bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
+
+
+# --- BUTTON CLICK LISTENER (UPDATES DATABASE LIVE) ---
+@bot.callback_query_handler(func=lambda call: call.data in ["mark_safe", "mark_emergency"])
+def handle_status_buttons(call):
+    chat_id = call.message.chat.id
+
+    if call.data == "mark_safe":
+        new_status = "secure"
+        reply_text = "<b>STATUS UPDATED: SECURE.</b>\n\nYou have been marked as safe on the Command Dashboard. Please remain at the assembly area."
+    else:
+        new_status = "emergency help"
+        reply_text = "<b>EMERGENCY LOGGED.</b>\n\nYour status is flashing red on the Command Dashboard. Rescue teams have been notified of your exact last known location. Stay exactly where you are."
+
+    api_endpoint = f"{SUPABASE_URL}/rest/v1/evacuees?chat_id=eq.{chat_id}"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.patch(api_endpoint, json={"status": new_status}, headers=headers)
+        if response.status_code in [200, 204]:
+            bot.answer_callback_query(call.id, "Status Updated!")
+            bot.send_message(chat_id, reply_text, parse_mode="HTML")
+            bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+            print(f"  UPDATE: User {chat_id} -> {new_status.upper()}")
+        else:
+            bot.answer_callback_query(call.id, "Database Sync Delayed", show_alert=True)
+    except Exception:
+        bot.answer_callback_query(call.id, "Network Error", show_alert=True)
+
 
 # --- 5. EXECUTION: Mass Alert Everyone ---
 def mass_alert():
@@ -198,7 +224,7 @@ def mass_alert():
 
     for user_id in REGISTERED_USERS:
         try:
-            bot.send_message(user_id, f"<b>CRITICAL ALARM</b>\nFire at {fire_building}! Tap below immediately.", parse_mode="HTML", reply_markup=markup)
+            bot.send_message(user_id, f"<b>CRITICAL ALARM</b>\nFire detected at <b>{fire_building}</b>! Tap below immediately.", parse_mode="HTML", reply_markup=markup)
             print(f"  Alert sent to: {user_id}")
         except Exception as e:
             print(f"  Could not reach {user_id}: {e}")
