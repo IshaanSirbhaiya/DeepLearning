@@ -232,14 +232,17 @@ def fetch_telemetry_data():
         for u in users:
             stat = str(u.get("status", "")).lower()
 
-            # Treat 'endangered' as 'sos' for counting and mapping
+            # 'endangered'     → counts as unaccounted (in transit)
+            # 'emergency help' → counts as sos (requires immediate rescue)
             if stat == "endangered":
+                stat = "unaccounted"
+            elif stat == "emergency help":
                 stat = "sos"
 
             if stat in counts:
                 counts[stat] += 1
 
-            # Grab SOS/endangered coordinates from Google Maps URL
+            # Grab emergency coordinates from Google Maps URL for map pins
             if stat == "sos":
                 gmaps_url = u.get("location_link")
                 lat, lon = parse_gmaps_coords(gmaps_url)
@@ -256,10 +259,11 @@ def fetch_telemetry_data():
             stat = str(u.get("status", "")).lower()
             event_map = {
                 "sos": "SOS INITIATED",
-                "endangered": "SOS INITIATED",
+                "emergency help": "SOS INITIATED",
                 "safe": "Arrived at verified Assembly",
                 "secure": "Mesh Node Connection Strong",
-                "unaccounted": "In transit/Connection weak"
+                "unaccounted": "In transit/Connection weak",
+                "endangered": "In transit/Connection weak"
             }
             recent_logs.append({
                 "uid": str(u.get("name") or u.get("chat_id", "Unknown"))[:20],
