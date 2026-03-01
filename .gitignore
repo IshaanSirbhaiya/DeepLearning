@@ -51,3 +51,9 @@ reports/charts/
 *.db
 *.db-wal
 *.db-shm
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OSM cache
+cache/
