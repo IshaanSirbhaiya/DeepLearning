@@ -35,9 +35,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── Local imports ─────────────────────────────────────────────────────────────
-from risk_scorer    import RiskScorer, ScorerConfig, FrameDetection, ScoreResult
-from privacy_filter import PrivacyFilter
-from alert_generator import AlertGenerator, LocationConfig
+from detection.risk_scorer    import RiskScorer, ScorerConfig, FrameDetection, ScoreResult
+from detection.privacy_filter import PrivacyFilter
+from detection.alert_generator import AlertGenerator, LocationConfig
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -54,7 +54,7 @@ logger = logging.getLogger("SafeEdge.Detector")
 
 class DetectorConfig:
     # Model
-    MODEL_PATH          = Path("models/fire_smoke.pt")
+    MODEL_PATH          = Path(__file__).parent / "models" / "fire_smoke.pt"
     MODEL_REPO          = "keremberke/yolov8n-fire-smoke-detection"   # HuggingFace
     CONFIDENCE_THRESHOLD = 0.45       # lower than scorer ignore — YOLO pre-filter
     IOU_THRESHOLD        = 0.45       # NMS IoU
@@ -76,8 +76,8 @@ class DetectorConfig:
     API_HOST            = "0.0.0.0"
     API_PORT            = 8001
 
-    # Claude Vision (optional enrichment — requires ANTHROPIC_API_KEY)
-    USE_CLAUDE_VISION   = os.getenv("USE_CLAUDE_VISION", "true").lower() == "true"
+    # OpenAI Vision (optional enrichment — requires OPENAI_API_KEY)
+    USE_VISION_API   = os.getenv("USE_VISION_API", "false").lower() == "true"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -114,10 +114,11 @@ def load_model():
     logger.info(f"Local weights not found. Downloading from HuggingFace: {cfg.MODEL_REPO}")
     try:
         from huggingface_hub import hf_hub_download
+        models_dir = str(cfg.MODEL_PATH.parent)
         pt_file = hf_hub_download(
             repo_id=cfg.MODEL_REPO,
             filename="best.pt",
-            local_dir="models",
+            local_dir=models_dir,
         )
         # Rename to canonical name
         os.rename(pt_file, str(cfg.MODEL_PATH))
@@ -204,7 +205,7 @@ class FireDetector:
         self.generator     = AlertGenerator(
             camera_id         = cfg.CAMERA_ID,
             location          = LocationConfig(cfg.BUILDING, cfg.FLOOR, cfg.ZONE),
-            use_claude_vision = cfg.USE_CLAUDE_VISION,
+            use_vision_api    = cfg.USE_VISION_API,
         )
         self.metrics       = EdgeMetrics()
         self.alert_queue:  queue.Queue = queue.Queue(maxsize=100)

@@ -1,7 +1,7 @@
 """
 alert_generator.py — SafeEdge Detection Layer
 Creates structured JSON alerts with blurred snapshot, metadata, and severity.
-Optionally calls Claude Vision API for a second-opinion description.
+Optionally calls OpenAI Vision API for a second-opinion description.
 """
 
 import os
@@ -17,8 +17,8 @@ from typing import List, Optional, Dict, Any
 import cv2
 import numpy as np
 
-from risk_scorer import ScoreResult, RiskLevel
-from privacy_filter import PrivacyFilter
+from detection.risk_scorer import ScoreResult, RiskLevel
+from detection.privacy_filter import PrivacyFilter
 
 logger = logging.getLogger("SafeEdge.AlertGenerator")
 
@@ -42,7 +42,7 @@ class FireAlert:
     positive_frames: int
     window_size:     int
     dual_class:      bool
-    claude_analysis: Optional[Dict]   # filled if Claude Vision enabled
+    vision_analysis: Optional[Dict]   # filled if OpenAI Vision enabled
     edge_metrics:    Dict[str, float] # fps, cpu_pct, mem_mb
 
     def to_json(self) -> str:
@@ -67,7 +67,7 @@ class LocationConfig:
 
 class AlertGenerator:
     """
-    Creates, saves, and optionally enriches fire alerts with Claude Vision.
+    Creates, saves, and optionally enriches fire alerts with OpenAI Vision.
 
     Usage:
         gen = AlertGenerator(camera_id="CAM_01", location=LocationConfig(...))
@@ -80,24 +80,24 @@ class AlertGenerator:
         location:           Optional[LocationConfig] = None,
         save_snapshots:     bool = True,
         include_b64:        bool = True,
-        use_claude_vision:  bool = True,   # requires ANTHROPIC_API_KEY env var
-        anthropic_api_key:  Optional[str] = None,
+        use_vision_api:     bool = False,   # requires OPENAI_API_KEY env var
+        openai_api_key:     Optional[str] = None,
     ):
         self.camera_id        = camera_id
         self.location         = location or LocationConfig()
         self.save_snapshots   = save_snapshots
         self.include_b64      = include_b64
-        self.use_claude_vision = use_claude_vision
-        self._api_key         = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.use_vision_api   = use_vision_api
+        self._api_key         = openai_api_key or os.getenv("OPENAI_API_KEY")
         self._privacy         = PrivacyFilter()
         self._alert_counter   = 0
 
-        if use_claude_vision and not self._api_key:
+        if use_vision_api and not self._api_key:
             logger.warning(
-                "ANTHROPIC_API_KEY not set — Claude Vision disabled. "
+                "OPENAI_API_KEY not set — Vision API disabled. "
                 "Set env var to enable AI-powered alert enrichment."
             )
-            self.use_claude_vision = False
+            self.use_vision_api = False
 
     # ── Public ────────────────────────────────────────────────────────────────
 
@@ -137,10 +137,10 @@ class AlertGenerator:
         if self.include_b64:
             snapshot_b64 = self._encode_b64(blurred_frame)
 
-        # 5. Claude Vision enrichment
-        claude_analysis = None
-        if self.use_claude_vision and snapshot_b64:
-            claude_analysis = self._call_claude_vision(snapshot_b64, score)
+        # 5. OpenAI Vision enrichment
+        vision_analysis = None
+        if self.use_vision_api and snapshot_b64:
+            vision_analysis = self._call_openai_vision(snapshot_b64, score)
 
         alert = FireAlert(
             alert_id        = alert_id,
@@ -159,7 +159,7 @@ class AlertGenerator:
             positive_frames = score.positive_frames,
             window_size     = score.window_size,
             dual_class      = score.dual_class,
-            claude_analysis = claude_analysis,
+            vision_analysis = vision_analysis,
             edge_metrics    = edge_metrics or {},
         )
 
@@ -183,24 +183,24 @@ class AlertGenerator:
         _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         return base64.b64encode(buffer).decode("utf-8")
 
-    # ── Claude Vision ─────────────────────────────────────────────────────────
+    # ── OpenAI Vision ──────────────────────────────────────────────────────────
 
-    def _call_claude_vision(self, b64_image: str, score: ScoreResult) -> Optional[Dict]:
+    def _call_openai_vision(self, b64_image: str, score: ScoreResult) -> Optional[Dict]:
         """
-        Call Claude Vision API to get a second-opinion description of the snapshot.
+        Call OpenAI Vision API to get a second-opinion description of the snapshot.
         Returns structured JSON analysis or None on failure.
         """
         try:
-            import anthropic
+            from openai import OpenAI
 
-            client = anthropic.Anthropic(api_key=self._api_key)
+            client = OpenAI(api_key=self._api_key)
 
             prompt = (
                 "You are a fire safety analyst reviewing a CCTV snapshot from an automated "
                 "fire detection system. The local YOLOv8 model flagged this frame as potentially "
                 f"containing fire or smoke (confidence: {score.best_confidence:.0%}, "
                 f"risk level: {score.risk_level}).\n\n"
-                "Analyse the image and respond with ONLY a JSON object — no markdown, no preamble:\n"
+                "Analyse the image and respond with ONLY a JSON object -- no markdown, no preamble:\n"
                 "{\n"
                 '  "fire_visible": true|false,\n'
                 '  "smoke_visible": true|false,\n'
@@ -214,19 +214,17 @@ class AlertGenerator:
                 "}"
             )
 
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
                 max_tokens=512,
                 messages=[
                     {
                         "role": "user",
                         "content": [
                             {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": b64_image,
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{b64_image}",
                                 },
                             },
                             {"type": "text", "text": prompt},
@@ -235,23 +233,23 @@ class AlertGenerator:
                 ],
             )
 
-            raw = response.content[0].text.strip()
+            raw = response.choices[0].message.content.strip()
             # Strip any accidental markdown fences
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
                     raw = raw[4:]
             analysis = json.loads(raw)
-            logger.info(f"Claude Vision: risk={analysis.get('risk_level')} "
+            logger.info(f"OpenAI Vision: risk={analysis.get('risk_level')} "
                         f"fp={analysis.get('false_positive_likely')}")
             return analysis
 
         except ImportError:
-            logger.warning("anthropic package not installed — skipping Claude Vision")
+            logger.warning("openai package not installed -- skipping Vision API")
         except json.JSONDecodeError as e:
-            logger.error(f"Claude Vision returned non-JSON: {e}")
+            logger.error(f"OpenAI Vision returned non-JSON: {e}")
         except Exception as e:
-            logger.error(f"Claude Vision call failed: {e}")
+            logger.error(f"OpenAI Vision call failed: {e}")
 
         return None
 
