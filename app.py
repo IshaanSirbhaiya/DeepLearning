@@ -116,15 +116,6 @@ h1 { color: #0f172a !important; font-weight: 900; letter-spacing: -0.5px; margin
 }
 .live-dot { height: 8px; width: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; animation: pulse 2s infinite;}
 
-/* Mesh Logs */
-.mesh-log {
-    padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;
-    display: flex; flex-direction: column; gap: 4px;
-}
-.mesh-log:last-child { border-bottom: none; }
-.log-time { color: #94a3b8; font-family: monospace; }
-.log-status-sos { display: inline-block; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.75rem;}
-.log-status-safe { display: inline-block; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.75rem;}
 
 #MainMenu, footer, header { visibility: hidden; }
 </style>
@@ -291,94 +282,58 @@ if data:
     """, unsafe_allow_html=True)
 
 
-# Middle Row: Map (2/3) & Mesh Health (1/3)
-col_map, col_health = st.columns([2.2, 1])
+# Map (full width)
+st.markdown('<div class="panel-container">', unsafe_allow_html=True)
+st.markdown('<div class="panel-title"><span class="live-dot"></span> Live Incident Map</div>', unsafe_allow_html=True)
 
-with col_map:
-    st.markdown('<div class="panel-container">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-title"><span class="live-dot"></span> Live Incident Map</div>', unsafe_allow_html=True)
-    
-    # Initialize Folium Map (Light mode aesthetics)
-    m = folium.Map(
-        location=NTU_CENTER,
-        zoom_start=16,
-        tiles="CartoDB positron", # Light, clean base map
-        control_scale=True,
-    )
-    
-    # Plot Fire Hazard Zone
-    if data and data.get("fire_zone"):
-        fz = data["fire_zone"]
-        # The transparent red hazard circle
-        folium.Circle(
-            location=[fz["lat"], fz["lon"]],
-            radius=fz["radius"],
-            color="#ef4444",
-            weight=2,
-            fill=True,
-            fill_color="#ef4444",
-            fill_opacity=0.25,
-            tooltip=f"{fz.get('incident_name', 'FIRE HAZARD ZONE')} ({fz['radius']}m)",
-        ).add_to(m)
-        # The exact fire epicenter emoji
+# Initialize Folium Map (Light mode aesthetics)
+m = folium.Map(
+    location=NTU_CENTER,
+    zoom_start=16,
+    tiles="CartoDB positron", # Light, clean base map
+    control_scale=True,
+)
+
+# Plot Fire Hazard Zone
+if data and data.get("fire_zone"):
+    fz = data["fire_zone"]
+    # The transparent red hazard circle
+    folium.Circle(
+        location=[fz["lat"], fz["lon"]],
+        radius=fz["radius"],
+        color="#ef4444",
+        weight=2,
+        fill=True,
+        fill_color="#ef4444",
+        fill_opacity=0.25,
+        tooltip=f"{fz.get('incident_name', 'FIRE HAZARD ZONE')} ({fz['radius']}m)",
+    ).add_to(m)
+    # The exact fire epicenter emoji
+    folium.Marker(
+        location=[fz["lat"], fz["lon"]],
+        icon=folium.DivIcon(html='<div style="font-size:30px; transform: translate(-10px, -15px);">🔥</div>'),
+        tooltip=fz.get("incident_name", "Epicenter"),
+    ).add_to(m)
+
+# Plot Safe Zones (Green)
+for name, (lat, lon) in SAFE_ZONES.items():
+    folium.Marker(
+        location=[lat, lon],
+        icon=folium.Icon(color="green", icon="shield", prefix="fa"),
+        tooltip=f"Assembly: {name}",
+    ).add_to(m)
+
+# Plot SOS Signals (Red Pins)
+if data and data.get("sos_locations"):
+    for sos_loc in data["sos_locations"]:
         folium.Marker(
-            location=[fz["lat"], fz["lon"]],
-            icon=folium.DivIcon(html='<div style="font-size:30px; transform: translate(-10px, -15px);">🔥</div>'),
-            tooltip=fz.get("incident_name", "Epicenter"),
+            location=[sos_loc["lat"], sos_loc["lon"]],
+            icon=folium.Icon(color="red", icon="warning-sign"),
+            tooltip=f"SOS: {sos_loc['uid']} @ {sos_loc['time']}",
+            popup=folium.Popup(f"<b>SOS ALERT</b><br>ID: {sos_loc['uid']}<br>Time: {sos_loc['time']}", max_width=200)
         ).add_to(m)
-        
-    # Plot Safe Zones (Green)
-    for name, (lat, lon) in SAFE_ZONES.items():
-        folium.Marker(
-            location=[lat, lon],
-            icon=folium.Icon(color="green", icon="shield", prefix="fa"),
-            tooltip=f"Assembly: {name}",
-        ).add_to(m)
-        
-    # Plot SOS Signals (Red Pins)
-    if data and data.get("sos_locations"):
-        for sos_loc in data["sos_locations"]:
-            folium.Marker(
-                location=[sos_loc["lat"], sos_loc["lon"]],
-                icon=folium.Icon(color="red", icon="warning-sign"),
-                tooltip=f"SOS: {sos_loc['uid']} @ {sos_loc['time']}",
-                popup=folium.Popup(f"<b>SOS ALERT</b><br>ID: {sos_loc['uid']}<br>Time: {sos_loc['time']}", max_width=200)
-            ).add_to(m)
 
-    # Render map
-    st_folium(m, width=None, height=500, returned_objects=[])
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-with col_health:
-    st.markdown('<div class="panel-container">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-title"><span class="live-dot"></span> Mesh Telemetry Feed</div>', unsafe_allow_html=True)
-    
-    if data and data.get("recent_logs"):
-        logs_html = ""
-        for log in data["recent_logs"]:
-            status_class = f"log-status-{log['status']}" if log['status'] in ['sos', 'safe'] else ""
-            status_badge = f'<span class="{status_class}">{log["event"]}</span>' if status_class else log["event"]
-            
-            logs_html += f"""
-            <div class="mesh-log">
-                <div style="display:flex; justify-content:space-between;">
-                    <strong>{log['uid']}</strong>
-                    <span class="log-time">{log['time']}</span>
-                </div>
-                <div>{status_badge}</div>
-            </div>
-            """
-        st.markdown(logs_html, unsafe_allow_html=True)
-    else:
-        st.caption("No recent logs.")
-        
-    st.markdown("<hr style='margin:15px 0; border:none; border-top:1px dashed #cbd5e1;'/>", unsafe_allow_html=True)
-    
-    # Add a mock "Refresh/Poll" config to make the sidebar functional
-    st.markdown('**System Controls**')
-    st.button("🔄 Force Mesh Sync", use_container_width=True)
-    st.caption("Auto-syncing every 3.0s")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+# Render map
+st_folium(m, width=None, height=550, returned_objects=[])
+st.markdown('</div>', unsafe_allow_html=True)
 
