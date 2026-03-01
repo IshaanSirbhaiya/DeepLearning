@@ -216,5 +216,13 @@ if __name__ == "__main__":
         )
         print(f"\n🔥 PUBLISHED: {event}\n")
 
+        # Also push to Supabase for integration testing
+        try:
+            from supabase_publisher import publish as supabase_publish
+            supabase_publish(1.34321, 103.68275, "The Hive")
+            print("✅ Pushed to Supabase hazards table")
+        except Exception as e:
+            print(f"⚠️  Supabase push skipped: {e}")
+
     threading.Thread(target=simulate, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=8001)

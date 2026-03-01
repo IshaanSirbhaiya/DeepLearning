@@ -9,13 +9,15 @@ import math
 import os
 import re
 import networkx as nx
-import osmnx as ox
 import folium
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 from folium.plugins import AntPath
 from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -28,13 +30,19 @@ st.set_page_config(
 
 # ── Supabase Init ─────────────────────────────────────────────────────────────
 
-# Attempt to load from Streamlit secrets, fallback to env vars or mock data if missing
-if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
-    supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+# Attempt to load from Streamlit secrets, fallback to .env vars
+try:
+    sb_url = st.secrets["SUPABASE_URL"]
+    sb_key = st.secrets["SUPABASE_KEY"]
+except Exception:
+    sb_url = os.getenv("SUPABASE_URL", "")
+    sb_key = os.getenv("SUPABASE_KEY", "")
+
+if sb_url and sb_key:
+    supabase: Client = create_client(sb_url, sb_key)
     USE_MOCK_DATA = False
 else:
-    # Use robust mock data if no Supabase credentials exist yet
-    USE_MOCK_DATA = False
+    USE_MOCK_DATA = True
 
 # ── CSS (Modern Light Mode Dashboard) ──────────────────────────────────────────
 
