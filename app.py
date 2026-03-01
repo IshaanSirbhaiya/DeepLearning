@@ -7,6 +7,7 @@ Light-mode UI, IoT Mesh tracking, and Supabase integration.
 
 import math
 import os
+import re
 import networkx as nx
 import osmnx as ox
 import folium
@@ -138,6 +139,30 @@ SAFE_ZONES = {
     "CCDS Assembly (N3 Carpark)": (1.3460, 103.6790),
 }
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def parse_gmaps_coords(url: str):
+    """
+    Extract (lat, lon) floats from a Google Maps URL.
+    Handles formats:
+      https://maps.google.com/maps?q=1.3440,103.6820
+      https://www.google.com/maps?q=1.3440,103.6820
+      https://maps.google.com/?q=1.3440,103.6820
+      https://www.google.com/maps/place/.../@1.3440,103.6820,17z/...
+    Returns (lat, lon) tuple or (None, None) if parsing fails.
+    """
+    if not url:
+        return None, None
+    # Try ?q=lat,lon or &q=lat,lon
+    m = re.search(r'[?&]q=([-\d.]+),([-\d.]+)', str(url))
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    # Try /@lat,lon,zoom
+    m = re.search(r'/@([-\d.]+),([-\d.]+)', str(url))
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    return None, None
+
 # ── Mock Data Generator ───────────────────────────────────────────────────────
 
 def fetch_telemetry_data():
@@ -205,15 +230,15 @@ def fetch_telemetry_data():
             if stat in counts:
                 counts[stat] += 1
 
-            # Grab SOS/endangered coordinates
+            # Grab SOS/endangered coordinates from Google Maps URL
             if stat == "sos":
-                lat = u.get("latitude")
-                lon = u.get("longitude")
-                if lat and lon:  # Only map if they have coordinates
+                gmaps_url = u.get("latitude") or u.get("longitude") or u.get("location")
+                lat, lon = parse_gmaps_coords(gmaps_url)
+                if lat and lon:
                     sos_locations.append({
                         "uid": str(u.get("name") or u.get("chat_id", "Unknown")),
-                        "lat": float(lat),
-                        "lon": float(lon),
+                        "lat": lat,
+                        "lon": lon,
                         "time": str(u.get("last_update", "Just now"))[:16].replace("T", " ")
                     })
                     
