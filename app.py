@@ -232,7 +232,7 @@ def fetch_telemetry_data():
 
             # Grab SOS/endangered coordinates from Google Maps URL
             if stat == "sos":
-                gmaps_url = u.get("latitude") or u.get("longitude") or u.get("location")
+                gmaps_url = u.get("location_link")
                 lat, lon = parse_gmaps_coords(gmaps_url)
                 if lat and lon:
                     sos_locations.append({
