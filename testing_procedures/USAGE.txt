@@ -1,0 +1,32 @@
+SafeEdge Benchmark Suite
+
+1) The benchmark suite is located at:
+   testing_procedures/run_suite.py
+
+2) pip install:
+   pip install numpy pandas requests python-dateutil opencv-python openai
+
+3) Optional OpenAI summary:
+   Windows PowerShell:
+     setx OPENAI_API_KEY "sk-..."
+   Mac/Linux:
+     export OPENAI_API_KEY="sk-..."
+
+4) Run:
+   python testing_procedures/run_suite.py --trials 1000 --clip-seconds 8 --out testing_procedures/results
+
+Integration:
+- HTTP mode:
+   set SAFEEDGE_MODE=http
+   set SAFEEDGE_API_BASE=http://127.0.0.1:8001
+   Implement POST /fire/ingest_clip -> {"detected":bool,"first_alert_s":float,"confidence":float}
+
+- CLI mode:
+   set SAFEEDGE_MODE=cli
+   set SAFEEDGE_DETECTOR_CMD="python detection/detector.py --input {clip_path}"
+
+Outputs:
+- testing_procedures/results/per_clip_metrics.csv
+- testing_procedures/results/metrics.json
+- testing_procedures/results/frontend_events.jsonl
+- testing_procedures/results/summary_ai.txt or summary_deterministic.txt

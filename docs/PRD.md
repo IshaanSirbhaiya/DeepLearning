@@ -241,6 +241,10 @@ DeepLearning/
 │   ├── run_demo.py              # Single-command E2E demo (zero API keys)
 │   └── sample_fire.mp4
 │
+├── testing_procedures/          # Benchmark Suite (FireSense dataset)
+│   ├── run_suite.py             # Auto-downloads FireSense, slices clips, runs E2E
+│   └── USAGE.txt                # How to run the benchmark suite
+│
 ├── docs/                        # Generated documentation + PDFs
 │   ├── PRD.md
 │   ├── SafeEdge_Documentation.pdf

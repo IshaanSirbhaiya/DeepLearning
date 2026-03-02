@@ -61,3 +61,7 @@ reports/charts/
 
 # OSM cache
 cache/
+
+# Testing procedures (downloaded videos + outputs)
+testing_procedures/cache/
+testing_procedures/results/

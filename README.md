@@ -194,6 +194,10 @@ DeepLearning/
 |   +-- run_demo.py              # Single-command E2E demo (zero API keys)
 |   +-- sample_fire.mp4          # Test video
 |
++-- testing_procedures/          # Benchmark Suite (FireSense dataset)
+|   +-- run_suite.py             # Auto-downloads FireSense, slices clips, runs E2E
+|   +-- USAGE.txt                # How to run the benchmark suite
+|
 +-- safeedge_simulation.py       # 1000-scenario Monte Carlo simulation
 +-- safeedge_simulation2.py      # NTU campus-specific simulation
 +-- SafeEdge_Simulation_Report.pdf        # Simulation 1 results
