@@ -333,6 +333,148 @@ def run_communication(alert):
 
 
 # ═════════════════════════════════════════════════════════════
+# PHASE 2b: INTERACTIVE COMMUNICATION (JUDGE PLAYS AS EVACUEE)
+# ═════════════════════════════════════════════════════════════
+
+def find_nearest_safe_zone(lat, lng):
+    """Find nearest NTU assembly zone. Returns (name, dist_m, coords, gmaps_url)."""
+    best_zone, best_dist, best_coords = "", float("inf"), (0, 0)
+    for zone_name, (z_lat, z_lng) in SAFE_ZONES.items():
+        d = calculate_distance(lat, lng, z_lat, z_lng)
+        if d < best_dist:
+            best_dist, best_zone, best_coords = d, zone_name, (z_lat, z_lng)
+    gmaps = (f"https://www.google.com/maps/dir/?api=1"
+             f"&origin={lat},{lng}&destination={best_coords[0]},{best_coords[1]}"
+             f"&travelmode=walking")
+    return best_zone, best_dist, best_coords, gmaps
+
+
+def write_demo_state(hazards, evacuees):
+    """Write demo_state.json for dashboard to read."""
+    state_path = PROJECT_ROOT / "testbench" / "demo_state.json"
+    with open(state_path, "w") as f:
+        json.dump({"hazards": hazards, "evacuees": evacuees}, f, indent=2)
+
+
+def run_communication_interactive(alert):
+    """Interactive Phase 2: Judge experiences the Telegram evacuation flow as an evacuee."""
+    phase(2, "COMMUNICATION & EVACUATION ROUTING")
+
+    fire_lat = alert["latitude"]
+    fire_lng = alert["longitude"]
+    building = alert["location"]["building"]
+
+    hazards = [{"name": f"{building} Fire", "latitude": fire_lat,
+                "longitude": fire_lng, "status": "active"}]
+
+    # ── Telegram Broadcast (automated) ──────────────────────────
+    print(f"  [TELEGRAM] CRITICAL ALARM — Fire detected at {building}!")
+    print(f"  [TELEGRAM] Broadcasting to 4 registered users...")
+    for name in ["You (Judge)", "Ishaan Sirbhaiya", "Naman Kumar", "Teammate 4"]:
+        time.sleep(0.3)
+        print(f"  [TELEGRAM] Alert sent to: {name}")
+
+    print(f"\n  {'='*55}")
+    print(f"  |  CRITICAL ALARM                                    |")
+    print(f"  |  Fire detected at {building}, Floor 2!{' '*(20-len(building))}|")
+    print(f"  |                                                     |")
+    print(f"  |           [ SEND MY LOCATION ]                      |")
+    print(f"  {'='*55}\n")
+
+    # ── Prompt 1: Share location? ───────────────────────────────
+    share = input("  Do you share your location? [Y/n]: ").strip().lower()
+    shared = share not in ("n", "no")
+
+    # Judge's assumed location (near the fire)
+    judge_lat, judge_lng = 1.3440, 103.6815  # ~150m from The Hive
+    judge_status = "endangered"
+    judge_zone_name = None
+    judge_gmaps = None
+
+    if shared:
+        dist = calculate_distance(fire_lat, fire_lng, judge_lat, judge_lng)
+        print(f"\n  [LOCATION] Your location received: ({judge_lat}, {judge_lng})")
+        print(f"  [ROUTING]  Distance to fire: {dist:.0f}m — ENDANGERED!\n")
+
+        # Route to nearest safe zone
+        judge_zone_name, zone_dist, _, judge_gmaps = find_nearest_safe_zone(judge_lat, judge_lng)
+        print(f"  [ROUTING]  Nearest safe zone: {judge_zone_name} ({zone_dist:.0f}m)")
+        print(f"  [ROUTING]  Google Maps: {judge_gmaps}\n")
+    else:
+        print(f"\n  [STATUS]   You chose not to share. You remain untracked.\n")
+
+    # ── Background users auto-process ───────────────────────────
+    print(f"  --- Meanwhile, other users are responding ---\n")
+    time.sleep(0.5)
+
+    # Ishaan (safe)
+    i_dist = calculate_distance(fire_lat, fire_lng, 1.3520, 103.6800)
+    print(f"  [USER]     Ishaan sends location (North Spine area)")
+    print(f"  [ROUTING]  Distance: {i_dist:.0f}m — SAFE. No evacuation needed.\n")
+    time.sleep(0.3)
+
+    # Naman (endangered)
+    n_dist = calculate_distance(fire_lat, fire_lng, 1.3440, 103.6815)
+    naman_zone, naman_zone_dist, _, naman_gmaps = find_nearest_safe_zone(1.3440, 103.6815)
+    print(f"  [USER]     Naman sends location (near {building})")
+    print(f"  [ROUTING]  Distance: {n_dist:.0f}m — ENDANGERED")
+    print(f"  [ROUTING]  Naman routed to {naman_zone} ({naman_zone_dist:.0f}m)\n")
+
+    # Build evacuees list & write state #1
+    evacuees = [
+        {"name": "You (Judge)", "status": judge_status,
+         "location_link": f"https://www.google.com/maps?q={judge_lat},{judge_lng}"},
+        {"name": "Ishaan Sirbhaiya", "status": ishaan_status,
+         "location_link": "https://www.google.com/maps?q=1.3520,103.6800"},
+        {"name": "Naman Kumar", "status": naman_status,
+         "location_link": "https://www.google.com/maps?q=1.3440,103.6815"},
+    ]
+    write_demo_state(hazards, evacuees)
+
+    # ── Prompt 2: Status button (only if endangered & shared) ───
+    if shared and judge_status == "endangered":
+        print(f"  {'='*55}")
+        print(f"  |  You have been routed to: {judge_zone_name:<26}|")
+        print(f"  |                                                     |")
+        print(f"  |   [1]  I have reached Safety                        |")
+        print(f"  |   [2]  EMERGENCY RESCUE (SOS)                       |")
+        print(f"  {'='*55}\n")
+
+        btn = input("  Your status? [1/2]: ").strip()
+        if btn == "2":
+            evacuees[0]["status"] = "emergency help"
+            print(f"\n  [STATUS]  You -> EMERGENCY HELP (SOS)")
+            print(f"  [STATUS]  Your SOS is now flashing red on the Command Dashboard.")
+            print(f"  [STATUS]  Rescue teams notified of your exact location.\n")
+        else:
+            evacuees[0]["status"] = "secure"
+            print(f"\n  [STATUS]  You -> SECURE")
+            print(f"  [STATUS]  You have been marked safe on the Command Dashboard.\n")
+        write_demo_state(hazards, evacuees)  # state write #2
+
+    # ── Background resolution ───────────────────────────────────
+    time.sleep(0.5)
+    print(f"  --- Meanwhile ---\n")
+    time.sleep(0.3)
+    print(f"  [USER]     Naman taps 'EMERGENCY RESCUE'")
+    evacuees[2]["status"] = "emergency help"
+    print(f"  [STATUS]   Naman Kumar -> EMERGENCY HELP (SOS)\n")
+    write_demo_state(hazards, evacuees)  # state write #3 (final)
+
+    # ── Summary table ───────────────────────────────────────────
+    print(f"  +-------------------------+------------------+")
+    print(f"  | Evacuee                 | Status           |")
+    print(f"  +-------------------------+------------------+")
+    for e in evacuees:
+        s = e["status"].upper()
+        print(f"  | {e['name']:<23} | {s:<16} |")
+    print(f"  +-------------------------+------------------+")
+    print(f"\n  [STATE]  demo_state.json updated — Dashboard refreshing...")
+
+    return {"hazards": hazards, "evacuees": evacuees}
+
+
+# ═════════════════════════════════════════════════════════════
 # PHASE 3: DASHBOARD
 # ═════════════════════════════════════════════════════════════
 
@@ -378,6 +520,8 @@ def main():
                         help="Run headless (no CV2 window)")
     parser.add_argument("--skip-dashboard", action="store_true",
                         help="Skip launching Streamlit dashboard")
+    parser.add_argument("--no-interactive", action="store_true",
+                        help="Skip interactive prompts (auto-simulate Phase 2)")
     args = parser.parse_args()
 
     # Find video
@@ -403,7 +547,10 @@ def main():
         alert = run_detection(str(video), display=not args.no_display)
 
         # Phase 2: Communication
-        run_communication(alert)
+        if args.no_interactive:
+            run_communication(alert)
+        else:
+            run_communication_interactive(alert)
 
         # Phase 3: Dashboard
         if not args.skip_dashboard:

@@ -28,6 +28,7 @@ requests>=2.31.0
 streamlit>=1.30
 folium>=0.15
 streamlit-folium>=0.18
+streamlit-autorefresh>=1.0.0
 
 # Mapping / Routing
 osmnx>=1.9

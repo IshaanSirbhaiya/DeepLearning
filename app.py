@@ -21,6 +21,13 @@ from pathlib import Path
 
 load_dotenv()
 
+# ── Auto-refresh (live updates during demo) ──────────────────────────────────
+try:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=3000, limit=100, key="demo_refresh")
+except ImportError:
+    pass  # manual browser refresh still works
+
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
