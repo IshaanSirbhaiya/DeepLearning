@@ -8,6 +8,7 @@ Light-mode UI, IoT Mesh tracking, and Supabase integration.
 import math
 import os
 import re
+import json
 import networkx as nx
 import folium
 import streamlit as st
@@ -16,6 +17,7 @@ from streamlit_folium import st_folium
 from folium.plugins import AntPath
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -174,8 +176,39 @@ def parse_gmaps_coords(url: str):
 # ── Mock Data Generator ───────────────────────────────────────────────────────
 
 def fetch_telemetry_data():
-    """Fetch user status counts and SOS locations from Supabase or Mock."""
+    """Fetch user status counts and SOS locations from Supabase, demo_state.json, or mock."""
     if USE_MOCK_DATA:
+        # Try to read from demo_state.json (written by testbench/run_demo.py)
+        demo_state_path = Path(__file__).parent / "testbench" / "demo_state.json"
+        if demo_state_path.exists():
+            try:
+                state = json.loads(demo_state_path.read_text())
+                evacuees = state.get("evacuees", [])
+                hazards = state.get("hazards", [])
+                counts = {"total": len(evacuees), "secure": 0, "safe": 0, "unaccounted": 0, "sos": 0}
+                sos_locations = []
+                for e in evacuees:
+                    s = e.get("status", "").lower()
+                    if s == "endangered":
+                        s = "unaccounted"
+                    elif s == "emergency help":
+                        s = "sos"
+                    if s in counts:
+                        counts[s] += 1
+                    if s == "sos":
+                        sos_locations.append({"uid": e["name"], "lat": 1.3440, "lon": 103.6815, "time": "now"})
+                fire_zone = None
+                if hazards:
+                    h = hazards[0]
+                    fire_zone = {"lat": h["latitude"], "lon": h["longitude"], "radius": 100, "incident_name": h["name"]}
+                return {
+                    "counts": counts, "sos_locations": sos_locations,
+                    "recent_logs": [{"uid": e["name"], "event": e["status"], "status": e["status"], "time": "now"} for e in evacuees],
+                    "fire_zone": fire_zone,
+                }
+            except Exception:
+                pass
+
         return {
             "counts": {"total": 1250, "secure": 600, "safe": 242, "unaccounted": 405, "sos": 3},
             "sos_locations": [

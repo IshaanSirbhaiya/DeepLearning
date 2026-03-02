@@ -6,173 +6,129 @@ SafeEdge upgrades existing CCTV cameras with lightweight, on-device AI to detect
 
 ---
 
+## Quick Start (Single Command)
+
+```bash
+pip install -r requirements.txt
+python testbench/run_demo.py
+```
+
+**That's it.** No API keys needed. This runs the entire pipeline in one terminal:
+
+| Phase | What happens |
+|-------|-------------|
+| **1. Detection** | YOLO + EarlyFireDetector on video — CV2 window with live bounding boxes |
+| **2. Communication** | Simulated Telegram alerts + evacuation routing with real math |
+| **3. Dashboard** | Streamlit Command Centre opens in browser with fire map + evacuee status |
+
+Press **Q** in the video window to skip ahead. Press **Ctrl+C** to exit.
+
+### Options
+
+```bash
+python testbench/run_demo.py --input path/to/video.mp4   # custom video
+python testbench/run_demo.py --no-display                 # headless (no CV2 window)
+python testbench/run_demo.py --skip-dashboard             # skip Streamlit launch
+```
+
+---
+
 ## Prerequisites
 
 - Python 3.10+
 - pip (Python package manager)
-- Webcam (optional — can use provided test video instead)
-- Internet connection (for first-time dependency install and OpenAI Vision 2FA)
+- Internet connection (first run only — downloads ~6MB YOLO model)
 
-## Step 1: Install Dependencies
+## What the Demo Shows
 
-```bash
-cd DeepLearning
-pip install -r requirements.txt
-```
+### Phase 1: Fire Detection (~30s)
 
-## Step 2: Configure API Keys
+- **EarlyFireDetector** flags pre-fire anomalies (optical flow + background subtraction + texture variance) BEFORE flames appear
+- **YOLOv8n** detects fire/smoke with bounding boxes and confidence scores
+- Multi-frame confirmation: 5/8 consecutive frames required to trigger alert
+- Terminal prints real-time detection events and structured alert JSON
 
-Create a `.env` file in the project root:
+### Phase 2: Communication & Routing (~5s)
 
-```bash
-OPENAI_API_KEY=your_openai_key_here
-```
+- Simulates Telegram broadcast to 4 registered users
+- Calculates real Haversine distances from each user to the fire
+- Routes endangered users to the nearest of 9 NTU assembly zones
+- Generates Google Maps walking directions
+- Simulates user button taps: "I have reached Safety" / "EMERGENCY RESCUE"
+- Writes local state to `testbench/demo_state.json`
 
-- `OPENAI_API_KEY` — Required for Vision 2FA (second-opinion fire confirmation) and AI-generated report narratives. Detection still works without it, but Vision 2FA will be skipped.
+### Phase 3: Command Centre Dashboard
 
-Optional keys (for dashboard and notifications):
-```bash
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-TELEGRAM_BOT_TOKEN=your_telegram_token
-GOOGLE_MAPS_API_KEY=your_google_maps_key
-```
+- Streamlit dashboard opens at http://localhost:8501
+- NTU campus map (Folium) with fire hazard zone and assembly markers
+- KPI cards: Notified / Safe / Unaccounted / Active SOS
+- Reads from `demo_state.json` — no Supabase needed
 
-## Step 3: Run Fire Detection
+---
 
-### Option A — Webcam (live detection)
+## Optional: Run Individual Subsystems
+
+For deeper testing, each component can run independently.
+
+### Live Webcam Detection
 
 ```bash
 cd detection
 python detector.py --input 0 --server
 ```
 
-This opens your webcam feed with real-time YOLOv8n fire/smoke detection and starts a FastAPI server on port 8001.
+Opens webcam with real-time YOLO detection. Hold your phone showing a fire video to test.
 
-**To test:** Hold your phone up to the webcam showing a fire video from YouTube (search "fire burning footage"). You should see bounding boxes appear around fire/smoke regions with confidence scores.
-
-### Option B — Test video (no webcam needed)
+### API Endpoints (with --server flag)
 
 ```bash
-cd detection
-python detector.py --input ../testbench/sample_fire.mp4
+curl http://localhost:8001/health         # service health
+curl http://localhost:8001/status         # FPS, CPU, memory
+curl http://localhost:8001/fire           # latest fire event
+curl http://localhost:8001/early-warning  # pre-fire anomalies
 ```
 
-This runs detection on the provided sample video.
-
-### Option C — Synthetic demo (no video needed)
-
-```bash
-cd detection
-python demo.py
-```
-
-This generates a synthetic fire scene with the full HUD overlay showing detection metrics.
-
-## Step 4: Verify Detection Output
-
-When fire is detected, check:
-
-1. **Terminal output** — Shows detection events with confidence scores and risk levels
-2. **HUD overlay** — Bounding boxes around fire/smoke with labels (fire, smoke, flame)
-3. **Alert JSON** — Generated in `detection/alerts/` folder:
-   ```
-   detection/alerts/
-   ├── alert_YYYYMMDD_HHMMSS.json    # Structured alert with risk score
-   └── alert_YYYYMMDD_HHMMSS.jpg     # Privacy-preserved snapshot (faces blurred)
-   ```
-4. **Vision 2FA** — If `OPENAI_API_KEY` is set, the alert JSON will contain a `vision_analysis` field:
-   ```json
-   {
-     "vision_analysis": {
-       "fire_visible": true,
-       "smoke_visible": true,
-       "risk_level": "HIGH",
-       "false_positive_likely": false,
-       "description": "Active flames visible..."
-     }
-   }
-   ```
-   If `vision_analysis` is `null`, the OpenAI API key is not configured.
-
-## Step 5: Test the API Endpoints
-
-With the detection server running (`--server` flag), test the API at `http://localhost:8001`:
-
-```bash
-# Check service health
-curl http://localhost:8001/health
-
-# Get detector status (FPS, CPU, memory)
-curl http://localhost:8001/status
-
-# Get latest fire event (teammates poll this endpoint)
-curl http://localhost:8001/fire
-
-# Get fire event history
-curl http://localhost:8001/fire/history?n=10
-
-# Get latest alert details
-curl http://localhost:8001/alerts/latest
-
-# Get early warning state (pre-fire anomalies)
-curl http://localhost:8001/early-warning
-```
-
-## Step 6: Run Sentinel-Mesh Dashboard
+### Dashboard Only
 
 ```bash
 streamlit run app.py
 ```
 
-This opens the **Sentinel-Mesh Fire Command Centre** in your browser with:
-- Live Folium map showing NTU campus with fire hazard zones
-- 9 safe assembly zones (green markers)
-- KPI cards: Notified / Safe / Unaccounted / Active SOS
-- Mesh Telemetry Feed (real-time event log)
-- Evacuee status tracking
+Works with mock data if no Supabase credentials are configured.
 
-The dashboard polls the detection server's `/fire` endpoint and updates Supabase in real-time. Works with mock data if Supabase credentials are not configured.
-
-## Step 7: Generate Intelligence Reports
+### Intelligence Reports
 
 ```bash
-# Generate all 3 PDF reports with AI-powered narratives
-python -m reports.generate_reports
-
-# Generate without OpenAI (faster, uses template text)
-python -m reports.generate_reports --no-ai
-
-# Generate a specific report only
-python -m reports.generate_reports --report 1   # Fire Trends
-python -m reports.generate_reports --report 2   # Emergency Response
-python -m reports.generate_reports --report 3   # System Performance
+python -m reports.generate_reports --no-ai    # no API key needed
+python -m reports.generate_reports             # with OpenAI narratives
 ```
 
-Reports are saved to `docs/`:
-- `SafeEdge_Fire_Trends.pdf` — Singapore SCDF fire statistics (2014-2024)
-- `SafeEdge_Emergency_Response.pdf` — SCDF response time analysis by division
-- `SafeEdge_System_Performance.pdf` — Real detection metrics (confidence, FPS, CPU, memory)
+Generates 3 PDF reports: Fire Trends, Emergency Response, System Performance.
 
-## Expected Output Summary
+---
 
-| Component | What You Should See |
-|-----------|-------------------|
-| Detection | Bounding boxes around fire/smoke, confidence scores in terminal |
-| Early Warning | Pre-fire anomaly flags before visible flames appear |
-| Privacy Filter | Faces automatically blurred in saved snapshots |
-| Vision 2FA | `vision_analysis` populated in alert JSON (with API key) |
-| Alert Files | JSON + blurred JPG saved in `detection/alerts/` |
-| API Server | Health, status, fire events available at port 8001 |
-| Dashboard | NTU campus map with fire zones, safe zones, evacuee tracking |
-| Reports | 3 branded PDF reports with charts and data-driven narratives |
+## API Keys (Optional)
+
+All features work without API keys. To enable cloud services, copy `.env.example` to `.env`:
+
+```bash
+cp .env.example .env
+```
+
+| Key | Purpose | Without it |
+|-----|---------|-----------|
+| `OPENAI_API_KEY` | Vision 2FA (GPT-4o confirms fire) | 2FA skipped, YOLO-only detection |
+| `TELEGRAM_BOT_TOKEN` | Real Telegram alerts | Alerts simulated in terminal |
+| `SUPABASE_URL` + `SUPABASE_KEY` | Live dashboard sync | Dashboard uses local state file |
+
+---
 
 ## Troubleshooting
 
-- **No bounding boxes appearing?** Ensure the video contains visible fire/smoke. The model requires confidence > 0.45 and 5/8 multi-frame confirmation before alerting.
-- **`vision_analysis: null`?** Check that `OPENAI_API_KEY` is set in `.env` and the key is valid.
-- **Model download on first run?** YOLOv8n weights (~6MB) are auto-downloaded from HuggingFace on first execution.
-- **Dashboard shows no fire events?** Ensure the detection server is running with `--server` flag on port 8001.
+- **No bounding boxes?** Ensure video contains visible fire/smoke. Model requires conf > 0.45.
+- **Model download on first run?** YOLOv8n weights (~6MB) auto-download from HuggingFace.
+- **`ModuleNotFoundError`?** Run `pip install -r requirements.txt` from the project root.
+- **Port 8501 in use?** Kill existing Streamlit: `streamlit kill` or use a different port.
 
 ---
 

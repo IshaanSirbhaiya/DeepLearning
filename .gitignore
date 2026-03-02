@@ -9,6 +9,10 @@ build/
 venv/
 .venv/
 
+# Test/scratch files
+bot test.py
+DLW Claude Code Chats.txt
+
 # Old PRDs (not part of codebase)
 Ishaan FireSense_AI_PRD.docx
 Ishaan FireSense_AI_PRD.md
