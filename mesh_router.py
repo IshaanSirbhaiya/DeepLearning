@@ -4,21 +4,17 @@ import networkx as nx
 import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import math
-
 # --- 1. CONFIGURATION & CREDENTIALS ---
 TELEGRAM_BOT_TOKEN = "8622784083:AAG9eU9XMSZQJ0_MC90RYcmqn-P31FAKiPE"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
-
 REGISTERED_USERS = ["5808527465", "1674734061","5574113481","8112299954"]
 SUPABASE_URL = "https://jyuxqhkutlblnzrutuey.supabase.co"
 SUPABASE_KEY = "sb_publishable_KuMdlRMDYfFELn8br7zYWQ_5PRFJsU6"
-
 # =========================================================
 # 🚨 COMMAND CENTER OVERRIDE: SET THE ACTIVE FIRE HERE 🚨
 # Options: "The Hive", "North Spine", "SCBE", "Hall 2"
 # =========================================================
-ACTIVE_FIRE_NAME = "The Hive"
-
+ACTIVE_FIRE_NAME = "North Spine"
 # --- 2. ENGINE MATH & HARDCODED ZONES ---
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371000 
@@ -27,7 +23,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     delta_lambda = math.radians(lon2 - lon1)
     a = math.sin(delta_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2)**2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
-
 # Precise Coordinates for the 4 Scenarios
 HAZARDS = {
     "The Hive": (1.3432, 103.6827),
@@ -35,7 +30,6 @@ HAZARDS = {
     "SCBE": (1.3468, 103.6836), 
     "Hall 2": (1.3463, 103.6865) 
 }
-
 # 9 Official NTU Assembly Areas
 SAFE_ZONES = {
     "North Spine Plaza":          (1.3468, 103.6810),
@@ -48,20 +42,16 @@ SAFE_ZONES = {
     "CCEB Assembly (CW4)":        (1.3435, 103.6870),
     "CCDS Assembly (N3 Carpark)": (1.3460, 103.6790),
 }
-
 # --- 3. SYSTEM SETUP ---
 print("1. Loading NTU Map Engine...")
 ntu_center = (1.3460, 103.6810)
 G = ox.graph_from_point(ntu_center, dist=1500, network_type='walk')
-
 # Map the Safe Zones to physical walking nodes on the OpenStreetMap
 safe_nodes = {}
 for name, coords in SAFE_ZONES.items():
     safe_nodes[name] = ox.distance.nearest_nodes(G, X=coords[1], Y=coords[0])
-
 # Get the coordinates for whichever fire is currently active
 fire_lat, fire_lng = HAZARDS[ACTIVE_FIRE_NAME]
-
 print(f"2. Establishing 80-meter Quarantine Blast Radius around {ACTIVE_FIRE_NAME}...")
 danger_radius = 80 
 for node in G.nodes():
@@ -70,7 +60,6 @@ for node in G.nodes():
         for neighbor in G.neighbors(node):
             if G.has_edge(node, neighbor):
                 G[node][neighbor][0]['length'] = float('inf') 
-
 # --- 4. BOT LOGIC & SUPABASE SYNC ---
 @bot.message_handler(content_types=['location'])
 def handle_location(message):
@@ -98,17 +87,14 @@ def handle_location(message):
             print(f"✅ Success: {u_name} synced to Command Center!")
     except Exception as e:
         print(f"❌ Network Error: {e}")
-
     # =========================================================
     # INLINE BUTTON SETUP (SAFE & EMERGENCY)
     # =========================================================
-    # We create the interactive buttons to attach to the bottom of the map message
     interactive_buttons = InlineKeyboardMarkup()
     btn_safe = InlineKeyboardButton("🟢 I have reached Safety", callback_data="mark_safe")
     btn_sos = InlineKeyboardButton("🚨 EMERGENCY RESCUE", callback_data="mark_emergency")
     interactive_buttons.add(btn_safe)
     interactive_buttons.add(btn_sos)
-
     # =========================================================
     # STRICT GEOGRAPHIC ISOLATION ROUTING
     # =========================================================
@@ -116,16 +102,23 @@ def handle_location(message):
         hide_markup = telebot.types.ReplyKeyboardRemove()
         bot.reply_to(message, f"🟢 STATUS: SAFE. Stay clear of {ACTIVE_FIRE_NAME}.", reply_markup=hide_markup)
     else:
-        if ACTIVE_FIRE_NAME == "The Hive":
-            best_zone = "Innovation Centre Carpark" 
-        elif ACTIVE_FIRE_NAME == "North Spine":
-            best_zone = "South Spine Plaza" 
-        elif ACTIVE_FIRE_NAME == "SCBE":
-            best_zone = "CCDS Assembly (N3 Carpark)" 
-        elif ACTIVE_FIRE_NAME == "Hall 2":
-            best_zone = "The Arc (North Spine CP-E)" 
-        else:
-            best_zone = "Yunnan Garden (Open Field)"
+        # Dynamically pick the closest safe zone to the user that is far enough from the fire
+        min_safe_distance_from_fire = 200  # meters
+        best_zone = None
+        best_dist_to_user = float('inf')
+
+        for zone_name, (z_lat, z_lng) in SAFE_ZONES.items():
+            dist_from_fire = calculate_distance(fire_lat, fire_lng, z_lat, z_lng)
+            if dist_from_fire < min_safe_distance_from_fire:
+                continue  # skip zones too close to the fire
+            dist_from_user = calculate_distance(u_lat, u_lng, z_lat, z_lng)
+            if dist_from_user < best_dist_to_user:
+                best_dist_to_user = dist_from_user
+                best_zone = zone_name
+
+        if best_zone is None:
+            # Fallback: pick the zone farthest from the fire
+            best_zone = max(SAFE_ZONES, key=lambda z: calculate_distance(fire_lat, fire_lng, *SAFE_ZONES[z]))
 
         u_node = ox.distance.nearest_nodes(G, X=u_lng, Y=u_lat)
         target_node = safe_nodes[best_zone]
@@ -137,15 +130,14 @@ def handle_location(message):
             s_lat, s_lng = SAFE_ZONES[best_zone]
             
             gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lng}&destination={s_lat},{s_lng}&waypoints={waypoints}&travelmode=walking"
-            
-            # Message includes the interactive buttons instead of removing the keyboard
-            msg_text = f"🔴 ENDANGERED.\n🔥 Hazard: {ACTIVE_FIRE_NAME}\n\nProceed immediately to <b>{best_zone}</b>.\n📍 <a href='{gmaps_link}'>Open Safe Route</a>\n\n⚠️ <i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
+            gmaps_link_escaped = gmaps_link.replace("&", "&amp;")
+
+            msg_text = f"🔴 ENDANGERED.\n🔥 Hazard: {ACTIVE_FIRE_NAME}\n\nProceed immediately to <b>{best_zone}</b>.\n📍 <a href='{gmaps_link_escaped}'>Open Safe Route</a>\n\n⚠️ <i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
             bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
             
         except nx.NetworkXNoPath:
             msg_text = f"🔴 ENDANGERED. Please move away from {ACTIVE_FIRE_NAME} immediately.\n\n⚠️ <i>Once you are clear, press the Safe button. Click on Emergency if you need urgent help.</i>"
             bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
-
 # =========================================================
 # 🚨 BUTTON CLICK LISTENER (UPDATES DATABASE LIVE) 🚨
 # =========================================================
@@ -153,15 +145,12 @@ def handle_location(message):
 def handle_status_buttons(call):
     chat_id = call.message.chat.id
     
-    # Determine what status to push to Supabase based on which button they tapped
     if call.data == "mark_safe":
         new_status = "secure"
         reply_text = "✅ <b>STATUS UPDATED: SECURE.</b>\n\nYou have been marked as safe on the Command Dashboard. Please remain at the assembly area."
     else:
         new_status = "emergency help"
         reply_text = "🚨 <b>EMERGENCY LOGGED.</b>\n\nYour status is flashing red on the Command Dashboard. Rescue teams have been notified of your exact last known location. Stay exactly where you are."
-
-    # PATCH request to Supabase to update the specific user
     api_endpoint = f"{SUPABASE_URL}/rest/v1/evacuees?chat_id=eq.{chat_id}"
     headers = {
         "apikey": SUPABASE_KEY,
@@ -173,22 +162,15 @@ def handle_status_buttons(call):
         response = requests.patch(api_endpoint, json={"status": new_status}, headers=headers)
         
         if response.status_code in [200, 204]:
-            # Stop the loading spinner on the button they tapped
             bot.answer_callback_query(call.id, "Status Updated!")
-            
-            # Send them the confirmation message
             bot.send_message(chat_id, reply_text, parse_mode="HTML")
-            
-            # OPTIONAL BUT AWESOME UX: Remove the buttons from the old message so they can't tap them twice
             bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
-            
             print(f"📡 UPDATE: User {chat_id} pressed button -> {new_status.upper()}")
         else:
             bot.answer_callback_query(call.id, "Database Sync Delayed", show_alert=True)
             
     except Exception as e:
         bot.answer_callback_query(call.id, "Network Error", show_alert=True)
-
 # --- 5. EXECUTION: Mass Alert Everyone ---
 def mass_alert():
     print(f"4. Broadcasting {ACTIVE_FIRE_NAME} alert to ALL registered users...")
@@ -200,7 +182,6 @@ def mass_alert():
             bot.send_message(user_id, f"🚨 <b>CRITICAL ALARM</b> 🚨\nFire detected at <b>{ACTIVE_FIRE_NAME}</b>! Tap below immediately.", parse_mode="HTML", reply_markup=markup)
         except Exception:
             pass
-
 if __name__ == "__main__":
     mass_alert()
     print("🤖 Bot Online & Listening for all teammate locations...")
