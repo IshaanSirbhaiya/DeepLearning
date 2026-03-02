@@ -37,7 +37,7 @@ SAFE_ZONES = {
     "Sports & Rec Centre (SRC)":  (1.3496, 103.6835),
     "Yunnan Garden (Open Field)": (1.3458, 103.6858),
     "Hall 1–3 Field":             (1.3540, 103.6855),
-    "Innovation Centre Carpark":  (1.3448, 103.6785),
+    "Innovation Centre Carpark":  (1.3448, 103.6785),                         
     "The Arc (North Spine CP-E)": (1.3475, 103.6800),
     "CCEB Assembly (CW4)":        (1.3435, 103.6870),
     "CCDS Assembly (N3 Carpark)": (1.3460, 103.6790),
@@ -125,11 +125,13 @@ def handle_location(message):
         
         try:
             best_route = nx.shortest_path(G, source=u_node, target=target_node, weight='length')
-            step = max(1, len(best_route) // 4)
-            waypoints = "|".join([f"{G.nodes[best_route[i]]['y']},{G.nodes[best_route[i]]['x']}" for i in range(step, len(best_route)-1, step)])
             s_lat, s_lng = SAFE_ZONES[best_zone]
-            
-            gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lng}&destination={s_lat},{s_lng}&waypoints={waypoints}&travelmode=walking"
+
+            # Use the midpoint of the safe route as a single waypoint to steer Google Maps away from the fire
+            mid_node = best_route[len(best_route) // 2]
+            mid_lat, mid_lng = G.nodes[mid_node]['y'], G.nodes[mid_node]['x']
+
+            gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lng}&destination={s_lat},{s_lng}&waypoints={mid_lat},{mid_lng}&travelmode=walking"
             gmaps_link_escaped = gmaps_link.replace("&", "&amp;")
 
             msg_text = f"🔴 ENDANGERED.\n🔥 Hazard: {ACTIVE_FIRE_NAME}\n\nProceed immediately to <b>{best_zone}</b>.\n📍 <a href='{gmaps_link_escaped}'>Open Safe Route</a>\n\n⚠️ <i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
@@ -145,7 +147,7 @@ def handle_location(message):
 def handle_status_buttons(call):
     chat_id = call.message.chat.id
     
-    if call.data == "mark_safe":
+    if call.data == "mark_safe": 
         new_status = "secure"
         reply_text = "✅ <b>STATUS UPDATED: SECURE.</b>\n\nYou have been marked as safe on the Command Dashboard. Please remain at the assembly area."
     else:
