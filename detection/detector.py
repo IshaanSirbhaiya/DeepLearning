@@ -376,21 +376,51 @@ class FireDetector:
                     if not self.alert_queue.full():
                         self.alert_queue.put(alert.to_dict())
 
-                    fire_event.publish(
-                        building   = loc["building"],
-                        floor      = loc["floor"],
-                        zone       = loc["zone"],
-                        confidence = score.best_confidence,
-                        risk_level = score.risk_level,
-                        camera_id  = DetectorConfig.CAMERA_ID,
-                        latitude   = loc["lat"],
-                        longitude  = loc["lng"],
-                    )
-                    supabase_publish(loc["lat"], loc["lng"], loc["building"])
+                    # ── Formatted 2FA result ─────────────────────────
+                    va = alert.vision_analysis
+                    w = 57
+                    conf_str = f"{score.best_confidence:.2f}"
+                    det_label = score.best_detection.label if score.best_detection else "fire"
 
-                    print("\n" + "═" * 60)
-                    print(alert.to_json())
-                    print("═" * 60 + "\n")
+                    if va and va.get("false_positive_likely"):
+                        # 2FA caught false positive — don't publish alert
+                        reason = va.get("false_positive_reason") or "No real fire detected"
+                        print("\n" + "=" * w)
+                        print(f"  YOLO Detection: {det_label} (conf={conf_str})")
+                        print(f"  Vision 2FA:     FALSE POSITIVE")
+                        print(f"  Reason:         {reason}")
+                        print(f"  Action:         No alert sent - false alarm")
+                        print("=" * w + "\n")
+                    else:
+                        # Fire confirmed — publish alert
+                        fire_event.publish(
+                            building   = loc["building"],
+                            floor      = loc["floor"],
+                            zone       = loc["zone"],
+                            confidence = score.best_confidence,
+                            risk_level = score.risk_level,
+                            camera_id  = DetectorConfig.CAMERA_ID,
+                            latitude   = loc["lat"],
+                            longitude  = loc["lng"],
+                        )
+                        supabase_publish(loc["lat"], loc["lng"], loc["building"])
+
+                        if va:
+                            # 2FA confirmed fire
+                            risk = va.get("risk_level", score.risk_level).upper()
+                            print("\n" + "=" * w)
+                            print(f"  YOLO Detection: {det_label} (conf={conf_str})")
+                            print(f"  Vision 2FA:     CONFIRMED FIRE")
+                            print(f"  Risk Level:     {risk}")
+                            print(f"  Action:         Alert published - evacuate now")
+                            print("=" * w + "\n")
+                        else:
+                            # No Vision API — YOLO-only
+                            print("\n" + "=" * w)
+                            print(f"  YOLO Detection: {det_label} (conf={conf_str})")
+                            print(f"  Vision 2FA:     DISABLED (no API key)")
+                            print(f"  Action:         Alert published (YOLO-only)")
+                            print("=" * w + "\n")
 
                 # ── Display ───────────────────────────────────────────────
                 if display:
