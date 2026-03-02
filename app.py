@@ -8,14 +8,19 @@ Light-mode UI, IoT Mesh tracking, and Supabase integration.
 import math
 import os
 import re
+import time
+import asyncio
+import threading
 import networkx as nx
+from streamlit_autorefresh import st_autorefresh
 import osmnx as ox
 import folium
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 from folium.plugins import AntPath
-from supabase import create_client, Client
+from supabase import create_client, acreate_client, Client
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -34,7 +39,8 @@ if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
     USE_MOCK_DATA = False
 else:
     # Use robust mock data if no Supabase credentials exist yet
-    USE_MOCK_DATA = False
+    supabase = None
+    USE_MOCK_DATA = True
 
 # ── CSS (Modern Light Mode Dashboard) ──────────────────────────────────────────
 
@@ -163,7 +169,7 @@ def parse_gmaps_coords(url: str):
         return float(m.group(1)), float(m.group(2))
     return None, None
 
-# ── Mock Data Generator ───────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def fetch_telemetry_data():
     """Fetch user status counts and SOS locations from Supabase or Mock."""
@@ -275,7 +281,69 @@ def fetch_telemetry_data():
         st.error(f"Failed to fetch data from Supabase: {e}")
         return None
 
-# ── Main Layout ───────────────────────────────────────────────────────────────
+# ── Realtime Setup ────────────────────────────────────────────────────────────
+
+def on_db_change(payload):
+    """Callback for Supabase Realtime changes."""
+    st.session_state.last_db_update = time.time()
+    # NOTE: st.rerun() cannot be called from a background thread.
+    # The streamlit_autorefresh component handles periodic reruns instead.
+
+async def realtime_listener():
+    """Async listener for Supabase changes."""
+    if not USE_MOCK_DATA and "SUPABASE_URL" in st.secrets:
+        try:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_KEY"]
+            supabase_async = await acreate_client(url, key)
+            
+            # Subscribe to tables
+            channel = supabase_async.channel("db_changes")
+            channel.on_postgres_changes(
+                event="*",
+                callback=on_db_change,
+                schema="public",
+                table="evacuees",
+            ).on_postgres_changes(
+                event="*",
+                callback=on_db_change,
+                schema="public",
+                table="hazards",
+            )
+
+            await channel.subscribe()
+            
+            # Keep the async loop alive
+            while True:
+                await asyncio.sleep(1)
+        except Exception as e:
+            # We can't easily show st.error from here, so we log it
+            print(f"Realtime Listener Error: {e}")
+
+def start_realtime():
+    """Starts the realtime listener in a background thread."""
+    if not USE_MOCK_DATA and "realtime_initialized" not in st.session_state:
+        # Get the current script context so st.rerun works in the background
+        ctx = get_script_run_ctx()
+        
+        def thread_target():
+            add_script_run_ctx(ctx)
+            asyncio.run(realtime_listener())
+            
+        thread = threading.Thread(target=thread_target, daemon=True)
+        thread.start()
+        st.session_state.realtime_initialized = True
+
+# Initialize state and start realtime
+if "last_db_update" not in st.session_state:
+    st.session_state.last_db_update = time.time()
+
+start_realtime()
+
+# Refresh the page every 5 seconds so UI reflects realtime DB changes.
+# (st.rerun() cannot be triggered from background threads, so we poll instead.)
+if not USE_MOCK_DATA:
+    st_autorefresh(interval=5000, key="realtime_refresh")
 
 data = fetch_telemetry_data()
 
@@ -372,4 +440,3 @@ if data and data.get("sos_locations"):
 # Render map
 st_folium(m, width=None, height=550, returned_objects=[])
 st.markdown('</div>', unsafe_allow_html=True)
-
