@@ -6,6 +6,29 @@ SafeEdge upgrades existing CCTV cameras with lightweight, on-device AI to detect
 
 > **Why SafeEdge?** Singapore experiences 3,000+ fire incidents annually (SCDF). Traditional smoke detectors take 30-90 seconds to trigger. The 2024 Singtel outage took down 995/999 emergency lines for hours. SafeEdge detects fire in under 1 second, works fully offline, and extends the evacuation window by 30-120 seconds.
 
+---
+
+## For Judges: Quick Test (Single Command)
+
+**No API keys required.** Run from the project root:
+
+```bash
+pip install -r requirements.txt
+python testbench/run_demo.py
+```
+
+This runs the FULL pipeline in one terminal:
+
+| Phase | What happens |
+|-------|-------------|
+| **1. Detection** | YOLO + EarlyFireDetector on video with live bounding boxes |
+| **2. Communication** | Interactive evacuation — you play as a trapped person |
+| **3. Dashboard** | Streamlit Command Centre opens in browser |
+
+See [`testbench/setup.md`](testbench/setup.md) for detailed instructions and options.
+
+---
+
 ## The Problem We Solve
 
 When a fire breaks out today, a smoke detector eventually triggers an alarm - but someone must **manually investigate** to confirm whether it's real. This verification step takes 2-5 minutes, during which the fire grows and escape routes become compromised. Only after manual confirmation do residents get notified, and evacuation is uncoordinated - people panic, stampede, and don't know the safest route out.
@@ -26,9 +49,8 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
 - **Edge-first architecture** - ~6MB model, 15+ FPS on laptop CPU, no cloud dependency
 - **Sentinel-Mesh dashboard** - real-time evacuation command centre with NTU campus map
 - **SOS tracking** - tracks who reached safe zones, who's unaccounted, who needs rescue
-- **Telegram alerts** - instant fire notifications with indoor/outdoor evacuation routing
-- **Google Maps routing** - dynamic outdoor evacuation avoiding fire zones
-- **Sensor-fusion ready** - architecture designed to integrate IoT smoke/temperature sensor data
+- **Telegram alerts** - instant fire notifications with indoor/outdoor evacuation routing via inline buttons
+- **Google Maps routing** - dynamic walking directions to nearest of 9 NTU assembly zones
 - **Intelligence reports** - 3 PDF reports with real data charts + AI-generated narratives
 
 ## Architecture
@@ -52,8 +74,8 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
 [Fire Event Bus] --> /fire endpoint (port 8001)
     |
     +---> [Sentinel-Mesh Dashboard]  (Streamlit + Supabase)
-    +---> [Telegram Bot]             (evacuation alerts)
-    +---> [Google Maps]              (outdoor routing)
+    +---> [Telegram Bot]             (evacuation alerts + inline buttons)
+    +---> [Google Maps]              (walking route to assembly zones)
     +---> [PDF Reports]              (intelligence analytics)
 ```
 
@@ -61,7 +83,7 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
 
 ### Prerequisites
 - Python 3.10+
-- OpenAI API Key (for Vision 2FA + report narratives)
+- No API keys required for core detection and testbench demo
 
 ### Setup
 
@@ -69,23 +91,37 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
 git clone https://github.com/IshaanSirbhaiya/DeepLearning.git
 cd DeepLearning
 pip install -r requirements.txt
-# Create .env with your API keys
-echo "OPENAI_API_KEY=your_key_here" > .env
+```
+
+### Optional: API Keys
+
+Copy `.env.example` to `.env` to enable cloud services:
+
+| Key | Purpose | Without it |
+|-----|---------|-----------|
+| `OPENAI_API_KEY` | Vision 2FA (GPT-4o confirms fire) | 2FA skipped, YOLO-only detection |
+| `TELEGRAM_BOT_TOKEN` | Real Telegram alerts to users | Alerts simulated in terminal |
+| `SUPABASE_URL` + `SUPABASE_KEY` | Live dashboard sync | Dashboard uses local state file |
+
+### Run Full Demo (single command)
+
+```bash
+python testbench/run_demo.py
 ```
 
 ### Run Detection (webcam)
 
 ```bash
 cd detection
-python detector.py --input 0 --server
+python detector.py --input 0 --serve
 # Opens webcam + starts FastAPI server on port 8001
 ```
 
-### Run Detection (video file)
+### Run Telegram Bot (evacuation routing)
 
 ```bash
-cd detection
-python detector.py --input ../testbench/sample_fire.mp4
+python mesh_router.py
+# Polls /fire endpoint, sends alerts, routes users to safe zones
 ```
 
 ### Run Dashboard
@@ -102,14 +138,6 @@ python -m reports.generate_reports          # All 3 reports with AI narratives
 python -m reports.generate_reports --no-ai  # Quick mode without OpenAI
 ```
 
-### Run Synthetic Demo
-
-```bash
-cd detection
-python demo.py
-# Shows synthetic fire scene with HUD overlay
-```
-
 ## Project Structure
 
 ```
@@ -121,13 +149,16 @@ DeepLearning/
 |   +-- privacy_filter.py        # Face blur (MediaPipe)
 |   +-- alert_generator.py       # JSON alerts + OpenAI Vision 2FA
 |   +-- fire_event.py            # Fire event bus + /fire API
-|   +-- demo.py                  # Synthetic fire demo
-|   +-- models/                  # YOLOv8n weights (~6MB)
+|   +-- supabase_publisher.py    # Pushes fire events to Supabase
+|   +-- demo.py                  # Real video + live YOLO detection demo
+|   +-- models/                  # YOLOv8n weights (~6MB, auto-downloaded)
 |   +-- alerts/                  # Generated alert snapshots + JSON
 |
 +-- app.py                       # Sentinel-Mesh Streamlit dashboard
++-- mesh_router.py               # Telegram bot + NetworkX evacuation routing
 +-- campus.graphml               # NTU walking network (offline pathfinding)
 +-- supabase_schema.sql          # Database schema
++-- .env.example                 # Environment variable template
 |
 +-- reports/                     # PDF Intelligence Reports
 |   +-- generate_reports.py      # Entry point
@@ -142,8 +173,11 @@ DeepLearning/
 |   +-- SafeEdge_System_Performance.pdf
 |
 +-- testbench/                   # Test materials for judges
+|   +-- setup.md                 # Step-by-step setup & run instructions
+|   +-- run_demo.py              # Single-command E2E demo (zero API keys)
+|   +-- sample_fire.mp4          # Test video (place your own fire video here)
+|
 +-- requirements.txt
-+-- .env
 ```
 
 ## API Endpoints (port 8001)

@@ -27,8 +27,8 @@ import argparse
 from pathlib import Path
 
 # Fix Windows console encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -93,6 +93,8 @@ def run_detection(video_path, display=True):
     phase(1, "FIRE DETECTION")
     print(f"  Video:  {video_path}")
     print(f"  Vision 2FA: DISABLED (no API key needed)")
+    print(f"    -> In production, OpenAI GPT-4o confirms each detection")
+    print(f"    -> Catches false positives (e.g. warm skin tones)")
     print(f"  Display: {'ON' if display else 'OFF'}\n")
 
     # Load YOLO model
@@ -130,6 +132,7 @@ def run_detection(video_path, display=True):
     frame_idx = 0
     fire_frames = 0
     fire_confirmed = False
+    confirm_time = None
     alert_data = None
     start = time.time()
 
@@ -141,9 +144,8 @@ def run_detection(video_path, display=True):
             break
 
         frame_idx += 1
-        elapsed = time.time() - start
 
-        # Early detector
+        # Early detector (lightweight — run on every frame)
         early_result = None
         if early and frame_idx > 5:
             early_result = early.update(frame, frame_idx)
@@ -151,10 +153,11 @@ def run_detection(video_path, display=True):
                 print(f"  [EARLY]  EARLY WARNING — anomaly score {early_result.anomaly_score:.2f}, "
                       f"signals: {early_result.active_signals}")
 
-        # YOLO (every other frame)
+        # YOLO (every 5th frame for smooth playback)
         yolo_fire = False
         detections = []
-        if frame_idx % 2 == 0:
+        run_yolo = (frame_idx % 5 == 0)
+        if run_yolo:
             results = model.predict(frame, conf=0.45, iou=0.45, imgsz=640, verbose=False)
             for r in results:
                 for box in r.boxes:
@@ -165,37 +168,40 @@ def run_detection(video_path, display=True):
                         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0]]
                         detections.append((cls_name, conf, x1, y1, x2, y2))
 
-        if yolo_fire:
-            fire_frames += 1
-            max_conf = max(d[1] for d in detections)
-            risk = "CRITICAL" if max_conf >= 0.7 else "HIGH" if max_conf >= 0.5 else "WARNING"
-            print(f"  [YOLO]   {detections[0][0]} detected — conf={max_conf:.2f} "
-                  f"({fire_frames}/8 frames) — risk: {risk}")
+            # Only update fire counter on YOLO frames
+            if yolo_fire:
+                fire_frames += 1
+                max_conf = max(d[1] for d in detections)
+                risk = "CRITICAL" if max_conf >= 0.7 else "HIGH" if max_conf >= 0.5 else "WARNING"
+                print(f"  [YOLO]   {detections[0][0]} detected — conf={max_conf:.2f} "
+                      f"({fire_frames}/8 frames) — risk: {risk}")
 
-            if fire_frames >= 5 and not fire_confirmed:
-                fire_confirmed = True
-                fire_lat, fire_lng = 1.34321, 103.68275
-                alert_data = {
-                    "fire_detected": True,
-                    "latitude": fire_lat,
-                    "longitude": fire_lng,
-                    "location": {"building": "The Hive", "floor": 2, "zone": "Collaboration Studio"},
-                    "confidence": round(max_conf, 4),
-                    "risk_level": risk,
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "camera_id": "CAM_01",
-                    "detection_time_sec": round(elapsed, 1),
-                }
-                print(f"\n  [ALERT]  FIRE CONFIRMED! {fire_frames}/8 frames positive")
-                print(f"  [ALERT]  Location: The Hive, Floor 2, Collaboration Studio")
-                print(f"  [ALERT]  Detection time: {elapsed:.1f}s\n")
-                print(f"  [ALERT]  JSON output:")
-                print(f"  {json.dumps(alert_data, indent=2)}\n")
+                if fire_frames >= 5 and not fire_confirmed:
+                    fire_confirmed = True
+                    confirm_time = time.time()
+                    elapsed = time.time() - start
+                    fire_lat, fire_lng = 1.34321, 103.68275
+                    alert_data = {
+                        "fire_detected": True,
+                        "latitude": fire_lat,
+                        "longitude": fire_lng,
+                        "location": {"building": "The Hive", "floor": 2, "zone": "Collaboration Studio"},
+                        "confidence": round(max_conf, 4),
+                        "risk_level": risk,
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "camera_id": "CAM_01",
+                        "detection_time_sec": round(elapsed, 1),
+                    }
+                    print(f"\n  [ALERT]  FIRE CONFIRMED! {fire_frames}/8 frames positive")
+                    print(f"  [ALERT]  Location: The Hive, Floor 2, Collaboration Studio")
+                    print(f"  [ALERT]  Detection time: {elapsed:.1f}s\n")
+                    print(f"  [ALERT]  JSON output:")
+                    print(f"  {json.dumps(alert_data, indent=2)}\n")
 
-                if display:
-                    print("  Press Q in video window to continue to Phase 2...\n")
-        else:
-            fire_frames = max(0, fire_frames - 1)
+                    if display:
+                        print("  Press Q in video window to continue to Phase 2...\n")
+            else:
+                fire_frames = max(0, fire_frames - 1)
 
         # Display with bounding boxes
         if display:
@@ -217,7 +223,7 @@ def run_detection(video_path, display=True):
                 break
 
         # Auto-advance 3 seconds after fire confirmed
-        if fire_confirmed and (time.time() - start) > elapsed + 3:
+        if confirm_time and (time.time() - confirm_time) > 3:
             break
 
     cap.release()
@@ -259,7 +265,7 @@ def run_communication(alert):
         ("Abhishek Vulla", "8112299954"),
         ("Ishaan Sirbhaiya", "5808527465"),
         ("Naman Kumar", "1674734061"),
-        ("Teammate 4", "5574113481"),
+        ("Abhishek Vulla", "5574113481"),
     ]
 
     print(f"  [TELEGRAM] Broadcasting CRITICAL ALARM to {len(users)} registered users...")
@@ -367,19 +373,21 @@ def run_communication_interactive(alert):
     hazards = [{"name": f"{building} Fire", "latitude": fire_lat,
                 "longitude": fire_lng, "status": "active"}]
 
+    w = 53  # box width for terminal UI
+
     # ── Telegram Broadcast (automated) ──────────────────────────
     print(f"  [TELEGRAM] CRITICAL ALARM — Fire detected at {building}!")
     print(f"  [TELEGRAM] Broadcasting to 4 registered users...")
-    for name in ["You (Judge)", "Ishaan Sirbhaiya", "Naman Kumar", "Teammate 4"]:
+    for name in ["You (Judge)", "Ishaan Sirbhaiya", "Naman Kumar", "Abhishek Vulla"]:
         time.sleep(0.3)
         print(f"  [TELEGRAM] Alert sent to: {name}")
 
-    print(f"\n  {'='*55}")
-    print(f"  |  CRITICAL ALARM                                    |")
-    print(f"  |  Fire detected at {building}, Floor 2!{' '*(20-len(building))}|")
-    print(f"  |                                                     |")
-    print(f"  |           [ SEND MY LOCATION ]                      |")
-    print(f"  {'='*55}\n")
+    print(f"\n  {'='*w}")
+    print(f"  | {'CRITICAL ALARM':<{w-3}}|")
+    print(f"  | {'Fire detected at ' + building + ', Floor 2!':<{w-3}}|")
+    print(f"  |{' '*(w-2)}|")
+    print(f"  | {'[ SEND MY LOCATION ]':^{w-3}}|")
+    print(f"  {'='*w}\n")
 
     # ── Prompt 1: Share location? ───────────────────────────────
     share = input("  Do you share your location? [Y/n]: ").strip().lower()
@@ -424,21 +432,21 @@ def run_communication_interactive(alert):
     evacuees = [
         {"name": "You (Judge)", "status": judge_status,
          "location_link": f"https://www.google.com/maps?q={judge_lat},{judge_lng}"},
-        {"name": "Ishaan Sirbhaiya", "status": ishaan_status,
+        {"name": "Ishaan Sirbhaiya", "status": "secure",
          "location_link": "https://www.google.com/maps?q=1.3520,103.6800"},
-        {"name": "Naman Kumar", "status": naman_status,
+        {"name": "Naman Kumar", "status": "endangered",
          "location_link": "https://www.google.com/maps?q=1.3440,103.6815"},
     ]
     write_demo_state(hazards, evacuees)
 
     # ── Prompt 2: Status button (only if endangered & shared) ───
     if shared and judge_status == "endangered":
-        print(f"  {'='*55}")
-        print(f"  |  You have been routed to: {judge_zone_name:<26}|")
-        print(f"  |                                                     |")
-        print(f"  |   [1]  I have reached Safety                        |")
-        print(f"  |   [2]  EMERGENCY RESCUE (SOS)                       |")
-        print(f"  {'='*55}\n")
+        print(f"  {'='*w}")
+        print(f"  | {'You have been routed to: ' + judge_zone_name:<{w-3}}|")
+        print(f"  |{' '*(w-2)}|")
+        print(f"  | {'[1]  I have reached Safety':<{w-3}}|")
+        print(f"  | {'[2]  EMERGENCY RESCUE (SOS)':<{w-3}}|")
+        print(f"  {'='*w}\n")
 
         btn = input("  Your status? [1/2]: ").strip()
         if btn == "2":
