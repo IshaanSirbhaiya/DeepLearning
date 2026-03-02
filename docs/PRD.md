@@ -213,7 +213,7 @@ DeepLearning/
 │   ├── demo.py                  # Synthetic fire scene demo with HUD overlay
 │   ├── models/
 │   │   └── fire_smoke.pt        # YOLOv8n weights (auto-downloaded from HuggingFace)
-│   └── alerts/                  # Generated alert snapshots + JSON metadata
+│   └── alerts/                  # Real detection snapshots (JSON + blurred JPG pairs)
 │
 ├── app.py                       # Sentinel-Mesh Streamlit dashboard (ntu-hackathon)
 ├── campus.graphml               # NTU walking network graph (OSMnx)
@@ -228,6 +228,7 @@ DeepLearning/
 │
 ├── reports/                     # PDF report generation
 │   ├── generate_reports.py      # Entry point (--report 1|2|3, --no-ai)
+│   ├── doc_generator.py         # SafeEdge_Documentation.pdf generator
 │   ├── report_fire_trends.py    # Report 1: SCDF fire statistics
 │   ├── report_emergency_response.py  # Report 2: SCDF response analysis
 │   ├── report_system_performance.py  # Report 3: Real alert data analytics
@@ -235,17 +236,24 @@ DeepLearning/
 │   ├── ai_narrator.py           # OpenAI GPT-4o-mini narrative generator
 │   └── data_fetcher.py          # Data.gov.sg fetcher + SCDF fallback data
 │
-├── testbench/                   # Test videos for judges
+├── testbench/                   # Test materials for judges
+│   ├── setup.md                 # Step-by-step setup & run instructions
+│   ├── run_demo.py              # Single-command E2E demo (zero API keys)
 │   └── sample_fire.mp4
 │
 ├── docs/                        # Generated documentation + PDFs
 │   ├── PRD.md
+│   ├── SafeEdge_Documentation.pdf
 │   ├── SafeEdge_Fire_Trends.pdf
 │   ├── SafeEdge_Emergency_Response.pdf
 │   └── SafeEdge_System_Performance.pdf
 │
-└── alerts/                      # Root-level alert snapshots
-    └── .gitkeep
+├── safeedge_simulation.py       # 1000-scenario Monte Carlo simulation
+├── safeedge_simulation2.py      # NTU campus-specific simulation
+├── SafeEdge_Simulation_Report.pdf        # Simulation 1 results
+├── SafeEdge_Campus_Simulation_Report.pdf # Simulation 2 results
+├── SafeEdge_Report2_FireSense.pdf        # Real video benchmark (100 clips)
+└── SafeEdge_Simulation_Report_stats.json # Simulation metrics (JSON)
 
 8. API Endpoints
 
@@ -286,7 +294,25 @@ Innovation | Dual-track detection (ML + optical flow). Pre-fire anomaly detectio
 Technical Implementation | Real inference pipeline, multi-frame confirmation, OpenAI Vision integration, Streamlit dashboard, Supabase real-time backend, PDF reports with charts.
 Presentation & Documentation | 3 PDF intelligence reports, clean testbench, 2-min demo showing full detection → dashboard flow.
 
-11. Demo Video Script (2 minutes)
+11. Benchmark & Simulation Testing
+
+11.1 FireSense Real-Video Benchmark (Report 2)
+Tested SafeEdge's full YOLO pipeline on 100 real fire/non-fire clips from the FireSense dataset (DOI: 10.5281/zenodo.836749).
+Results: 100% recall, 85.9% precision, F1 = 92.4%. Alerts generated 22x faster than traditional detection (14s vs 309s). 34% evacuation time reduction.
+Report: SafeEdge_Report2_FireSense.pdf (project root)
+
+11.2 1000-Scenario Simulation (Simulation 1)
+Monte Carlo framework generating 1000 synthetic scenarios across 12 categories (large/small/night fires, smoke, heat shimmer, haze, cooking steam, exhaust, reflections, sunlight, crowds, empty corridors).
+Results: 99.4% precision, 86.9% recall, F1 = 92.7%. Only 3 false positives. 43.8% evacuation time reduction.
+Run: python safeedge_simulation.py --no-ai
+Report: SafeEdge_Simulation_Report.pdf + SafeEdge_Simulation_Report_stats.json (project root)
+
+11.3 NTU Campus Simulation (Simulation 2)
+Campus-specific simulation with 15 NTU buildings, occupancy levels, multi-camera coordination, and mesh network failure resilience.
+Run: python safeedge_simulation2.py --no-ai
+Report: SafeEdge_Campus_Simulation_Report.pdf (project root)
+
+12. Demo Video Script (2 minutes)
 Problem (15s): "When fire breaks out, smoke detectors are slow, and the 2024 Singtel outage proved 995 can fail. We built SafeEdge."
 Detection demo (30s): Show fire video → YOLO detecting fire/smoke → JSON alert with OpenAI Vision confirmation → blurred snapshot
 Dashboard (30s): Show Sentinel-Mesh dashboard updating with fire location, safe zones, evacuee status

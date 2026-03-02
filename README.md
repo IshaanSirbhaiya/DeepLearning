@@ -53,6 +53,16 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
 - **Google Maps routing** - dynamic walking directions to nearest of 9 NTU assembly zones
 - **Intelligence reports** - 3 PDF reports with real data charts + AI-generated narratives
 
+## Benchmark & Simulation Results
+
+| Test | Type | F1 | Precision | Recall | Key Finding |
+|------|------|----|-----------|--------|-------------|
+| **FireSense Benchmark** | Real video (100 clips) | 92.4% | 85.9% | 100% | 22x faster alerts (14s vs 309s), 34% evac reduction |
+| **1000-Scenario Simulation** | Synthetic Monte Carlo | 92.7% | 99.4% | 86.9% | Only 3 FPs across 1000 scenarios |
+| **NTU Campus Simulation** | Building-specific | - | - | - | Occupancy modeling + network failure resilience |
+
+> **FireSense benchmark** used 100 real fire/non-fire video clips from a citable dataset (DOI: [10.5281/zenodo.836749](https://doi.org/10.5281/zenodo.836749)). Full report: [`SafeEdge_Report2_FireSense.pdf`](SafeEdge_Report2_FireSense.pdf)
+
 ## Architecture
 
 ```
@@ -69,7 +79,7 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
     |
     v
 [Alert Generator] --> [OpenAI Vision 2FA confirmation]
-    |
+    |                   Saves to detection/alerts/ (JSON + blurred JPG)
     v
 [Fire Event Bus] --> /fire endpoint (port 8001)
     |
@@ -77,6 +87,7 @@ Our team discovered this problem by analyzing Singapore's emergency response dat
     +---> [Telegram Bot]             (evacuation alerts + inline buttons)
     +---> [Google Maps]              (walking route to assembly zones)
     +---> [PDF Reports]              (intelligence analytics)
+    +---> [Simulation Framework]     (1000-scenario + NTU campus)
 ```
 
 ## Quick Start
@@ -138,6 +149,13 @@ python -m reports.generate_reports          # All 3 reports with AI narratives
 python -m reports.generate_reports --no-ai  # Quick mode without OpenAI
 ```
 
+### Run Simulations
+
+```bash
+python safeedge_simulation.py --no-ai       # 1000-scenario benchmark
+python safeedge_simulation2.py --no-ai      # NTU campus simulation
+```
+
 ## Project Structure
 
 ```
@@ -152,7 +170,7 @@ DeepLearning/
 |   +-- supabase_publisher.py    # Pushes fire events to Supabase
 |   +-- demo.py                  # Real video + live YOLO detection demo
 |   +-- models/                  # YOLOv8n weights (~6MB, auto-downloaded)
-|   +-- alerts/                  # Generated alert snapshots + JSON
+|   +-- alerts/                  # Real detection snapshots (JSON + blurred JPG)
 |
 +-- app.py                       # Sentinel-Mesh Streamlit dashboard
 +-- mesh_router.py               # Telegram bot + NetworkX evacuation routing
@@ -160,23 +178,28 @@ DeepLearning/
 +-- supabase_schema.sql          # Database schema
 +-- .env.example                 # Environment variable template
 |
-+-- reports/                     # PDF Intelligence Reports
-|   +-- generate_reports.py      # Entry point
++-- reports/                     # PDF Report Generation
+|   +-- generate_reports.py      # Entry point (3 intelligence reports)
+|   +-- doc_generator.py         # SafeEdge_Documentation.pdf generator
 |   +-- report_fire_trends.py    # Report 1: SCDF fire statistics
 |   +-- report_emergency_response.py  # Report 2: SCDF response analysis
 |   +-- report_system_performance.py  # Report 3: Real alert metrics
 |
-+-- docs/                        # Documentation + Generated PDFs
++-- docs/                        # Generated Documentation
 |   +-- SafeEdge_Documentation.pdf
-|   +-- SafeEdge_Fire_Trends.pdf
-|   +-- SafeEdge_Emergency_Response.pdf
-|   +-- SafeEdge_System_Performance.pdf
+|   +-- PRD.md
 |
 +-- testbench/                   # Test materials for judges
 |   +-- setup.md                 # Step-by-step setup & run instructions
 |   +-- run_demo.py              # Single-command E2E demo (zero API keys)
-|   +-- sample_fire.mp4          # Test video (place your own fire video here)
+|   +-- sample_fire.mp4          # Test video
 |
++-- safeedge_simulation.py       # 1000-scenario Monte Carlo simulation
++-- safeedge_simulation2.py      # NTU campus-specific simulation
++-- SafeEdge_Simulation_Report.pdf        # Simulation 1 results
++-- SafeEdge_Campus_Simulation_Report.pdf # Simulation 2 results
++-- SafeEdge_Report2_FireSense.pdf        # Real video benchmark (100 clips)
++-- SafeEdge_Simulation_Report_stats.json # Simulation metrics (JSON)
 +-- requirements.txt
 ```
 

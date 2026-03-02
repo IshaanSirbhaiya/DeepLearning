@@ -190,7 +190,7 @@ Run the 1000-scenario simulation framework (no API keys needed):
 python safeedge_simulation.py --no-ai
 ```
 
-This generates `SafeEdge_Simulation_Report_stats.json` and a PDF report in `docs/`. For the campus-wide multi-building simulation:
+This generates `SafeEdge_Simulation_Report_stats.json` and a PDF report at the project root. For the campus-wide multi-building simulation:
 
 ```bash
 python safeedge_simulation2.py

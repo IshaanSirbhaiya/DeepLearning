@@ -25,7 +25,7 @@ class SafeEdgePDF(FPDF):
         self.report_title = title
         self.report_subtitle = subtitle
         self.audience = audience
-        self.set_auto_page_break(auto=True, margin=25)
+        self.set_auto_page_break(auto=True, margin=20)
         self.alias_nb_pages()
 
     def header(self):
@@ -104,20 +104,20 @@ class SafeEdgePDF(FPDF):
         self.set_font("Helvetica", "B", 16)
         self.set_text_color(*self.DARK)
         self.cell(0, 10, title)
-        self.ln(14)
+        self.ln(10)
 
     def add_subsection(self, title: str):
-        self.ln(4)
-        self.set_font("Helvetica", "B", 12)
+        self.ln(2)
+        self.set_font("Helvetica", "B", 11)
         self.set_text_color(*self.DARK)
-        self.cell(0, 8, title)
-        self.ln(10)
+        self.cell(0, 7, title)
+        self.ln(8)
 
     def add_narrative(self, text: str):
         self.set_font("Helvetica", "", 10)
         self.set_text_color(60, 60, 60)
-        self.multi_cell(0, 5.5, text)
-        self.ln(4)
+        self.multi_cell(0, 5, text)
+        self.ln(2)
 
     def add_chart(self, image_path: str, caption: str = "", width: int = 180):
         x = (210 - width) / 2
