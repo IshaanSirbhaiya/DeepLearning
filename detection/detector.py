@@ -63,6 +63,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SafeEdge.Detector")
 
+# Silence noisy loggers for clean demo output
+for _quiet in ("httpx", "httpcore", "openai", "urllib3",
+               "SafeEdge.AlertGenerator", "SafeEdge.PrivacyFilter",
+               "SafeEdge.EarlyFireDetector", "SafeEdge.SupabasePublisher"):
+    logging.getLogger(_quiet).setLevel(logging.ERROR)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -146,10 +152,6 @@ def pick_random_ntu_location() -> dict:
     """
     import random
     loc = random.choice(NTU_LOCATIONS)
-    logger.info(
-        f"[Demo] Location picked → {loc['building']} "
-        f"Floor {loc['floor']} ({loc['zone']})"
-    )
     return loc
 
 
@@ -284,6 +286,7 @@ class FireDetector:
             "total_early_warnings": 0,   # ← NEW counter
             "fps_avg":              0,
         }
+        self._first_alert_fired = False
 
         logger.info("FireDetector ready (YOLO + EarlyFireDetector).")
 
@@ -349,7 +352,7 @@ class FireDetector:
                 m          = self.metrics.tick()
                 self._stats["fps_avg"] = m["fps_avg"]
 
-                if frame_idx % 30 == 0:
+                if frame_idx % 30 == 0 and not self._first_alert_fired:
                     ew_score = early_warning.anomaly_score if early_warning else 0.0
                     logger.info(
                         f"Frame {frame_idx} | FPS {m['fps_current']} "
@@ -358,12 +361,7 @@ class FireDetector:
                         f"| early_score={ew_score:.2f}"
                     )
 
-                if score.should_alert:
-                    logger.warning(
-                        f"🔥 ALERT [{score.risk_level}] "
-                        f"conf={score.best_confidence:.2f} "
-                        f"frames={score.positive_frames}/{score.window_size}"
-                    )
+                if score.should_alert and not self._first_alert_fired:
                     # Pick a random NTU location for this alert
                     loc = pick_random_ntu_location()
                     self.generator.update_location(
@@ -434,6 +432,8 @@ class FireDetector:
                         print(f"  Risk Level:     {score.risk_level}")
                         print(f"  Action:         Alert published to evacuation system")
                         print("=" * w + "\n")
+
+                    self._first_alert_fired = True
 
                 # ── Display ───────────────────────────────────────────────
                 if display:

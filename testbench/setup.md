@@ -123,6 +123,81 @@ cp .env.example .env
 
 ---
 
+## Advanced: Full Setup with Real API Keys
+
+To run the complete system with live Telegram alerts, OpenAI Vision 2FA, and Supabase dashboard sync, follow these steps.
+
+### 1. OpenAI API Key
+
+1. Go to [platform.openai.com](https://platform.openai.com) → **API Keys** → **Create new secret key**
+2. Add to your `.env` file:
+   ```
+   OPENAI_API_KEY=sk-...
+   ```
+3. This enables the Vision 2FA layer — GPT-4o-mini analyzes fire snapshots for a second opinion
+
+### 2. Telegram Bot Setup
+
+1. Open Telegram, search for **@BotFather**
+2. Send `/newbot`, follow the prompts, and copy the bot token
+3. Add to `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=your-bot-token-here
+   ```
+4. **Get your Telegram User ID**: message **@userinfobot** on Telegram — it replies with your numeric user ID (e.g., `8112299954`)
+5. Open `mesh_router.py` and add your user ID to the `REGISTERED_USERS` list (line 26):
+   ```python
+   REGISTERED_USERS = ["5808527465", "1674734061", "5574113481", "8112299954", "YOUR_ID_HERE"]
+   ```
+6. Start a chat with your bot on Telegram and send `/start`
+
+### 3. Supabase Setup
+
+1. Create a free project at [supabase.com](https://supabase.com)
+2. Go to **SQL Editor** → paste the contents of `supabase_schema.sql` → **Run**
+3. Go to **Settings** → **API** → copy **Project URL** and **anon public key**
+4. Add to `.env`:
+   ```
+   SUPABASE_URL=https://xxxxx.supabase.co
+   SUPABASE_KEY=eyJ...
+   ```
+
+### 4. Running the Full System (3 Terminals)
+
+```bash
+# Terminal 1: Fire Detection (webcam + FastAPI server)
+cd detection && python detector.py --input 0 --server
+
+# Terminal 2: Telegram Bot + Evacuation Routing
+python mesh_router.py
+
+# Terminal 3: Sentinel-Mesh Dashboard
+streamlit run app.py
+```
+
+Hold your phone showing a fire video in front of the webcam. The system will:
+1. Detect fire via YOLO → confirm with multi-frame scoring → send to OpenAI Vision 2FA
+2. Publish alert → Telegram bot sends evacuation directions to all registered users
+3. Dashboard updates in real-time with fire location, KPI cards, and evacuee status
+
+---
+
+## Simulation Testing
+
+Run the 1000-scenario simulation framework (no API keys needed):
+
+```bash
+python safeedge_simulation.py --no-ai
+```
+
+This generates `SafeEdge_Simulation_Report_stats.json` and a PDF report in `docs/`. For the campus-wide multi-building simulation:
+
+```bash
+python safeedge_simulation2.py
+```
+
+---
+
 ## Troubleshooting
 
 - **No bounding boxes?** Ensure video contains visible fire/smoke. Model requires conf > 0.45.

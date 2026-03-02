@@ -1,0 +1,141 @@
+{
+  "simulation_config": {
+    "scenarios": 1000,
+    "seed": 42
+  },
+  "stats": {
+    "total": 1000,
+    "tp": 498,
+    "fp": 3,
+    "fn": 75,
+    "tn": 424,
+    "precision": 0.994,
+    "recall": 0.869,
+    "f1": 0.927,
+    "accuracy": 0.922,
+    "specificity": 0.993,
+    "false_positive_rate": 0.007,
+    "avg_detection_latency_ms": 460.0,
+    "avg_fps": 20.8,
+    "avg_cpu_percent": 28.1,
+    "avg_memory_mb": 341.0,
+    "early_warnings_issued": 488,
+    "avg_early_lead_time_sec": 38.2,
+    "openai_fp_suppressions": 43,
+    "alerts_sent": 501,
+    "evacuations_triggered": 338,
+    "avg_evacuation_notification_sec": 4.8
+  },
+  "category_breakdown": {
+    "fire_large": {
+      "count": 116,
+      "tp": 106,
+      "fp": 0,
+      "fn": 10,
+      "precision": 1.0,
+      "recall": 0.914
+    },
+    "fire_small": {
+      "count": 100,
+      "tp": 85,
+      "fp": 0,
+      "fn": 15,
+      "precision": 1.0,
+      "recall": 0.85
+    },
+    "fire_night": {
+      "count": 71,
+      "tp": 65,
+      "fp": 0,
+      "fn": 6,
+      "precision": 1.0,
+      "recall": 0.915
+    },
+    "smoke_only": {
+      "count": 99,
+      "tp": 89,
+      "fp": 0,
+      "fn": 10,
+      "precision": 1.0,
+      "recall": 0.899
+    },
+    "heat_shimmer": {
+      "count": 110,
+      "tp": 91,
+      "fp": 0,
+      "fn": 19,
+      "precision": 1.0,
+      "recall": 0.827
+    },
+    "haze_buildup": {
+      "count": 77,
+      "tp": 62,
+      "fp": 0,
+      "fn": 15,
+      "precision": 1.0,
+      "recall": 0.805
+    },
+    "cooking_steam": {
+      "count": 92,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": null
+    },
+    "vehicle_exhaust": {
+      "count": 53,
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": null
+    },
+    "reflection": {
+      "count": 61,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": null,
+      "recall": null
+    },
+    "sunlight_glare": {
+      "count": 50,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": null,
+      "recall": null
+    },
+    "normal_crowd": {
+      "count": 89,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": null,
+      "recall": null
+    },
+    "empty_corridor": {
+      "count": 82,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": null,
+      "recall": null
+    }
+  },
+  "evacuation": {
+    "baseline_total_sec": 2400,
+    "baseline_notification_sec": 480,
+    "safeedge_notification_sec": 4.8,
+    "notification_savings_sec": 475.2,
+    "avg_early_lead_time_sec": 38.2,
+    "routing_efficiency_gain_pct": 20.0,
+    "evacuation_savings_sec": 575.9,
+    "safeedge_total_sec": 1348.9,
+    "total_savings_sec": 1051.1,
+    "pct_reduction": 43.8,
+    "safeedge_total_min": 22.5,
+    "baseline_total_min": 40.0
+  }
+}
