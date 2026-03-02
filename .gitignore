@@ -28,10 +28,6 @@ Thumbs.db
 desktop.ini
 
 # Alerts output
-alerts/*.jpg
-alerts/*.json
-alerts/*.png
-!alerts/.gitkeep
 detection/alerts/*.jpg
 detection/alerts/*.json
 !detection/alerts/.gitkeep
