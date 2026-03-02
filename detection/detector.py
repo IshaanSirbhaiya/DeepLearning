@@ -295,6 +295,9 @@ class FireDetector:
         frame_idx = 0
         cfg       = DetectorConfig
 
+        if display:
+            cv2.namedWindow("SafeEdge — Fire Detection", cv2.WINDOW_NORMAL)
+
         try:
             while True:
                 ret, frame = cap.read()
@@ -376,11 +379,12 @@ class FireDetector:
                     if not self.alert_queue.full():
                         self.alert_queue.put(alert.to_dict())
 
-                    # ── Formatted 2FA result ─────────────────────────
+                    # ── Formatted terminal output ────────────────────
                     va = alert.vision_analysis
                     w = 57
                     conf_str = f"{score.best_confidence:.2f}"
                     det_label = score.best_detection.label if score.best_detection else "fire"
+                    frames_str = f"{score.positive_frames}/{score.window_size}"
 
                     if va and va.get("false_positive_likely"):
                         # 2FA caught false positive — don't publish alert
@@ -391,8 +395,8 @@ class FireDetector:
                         print(f"  Reason:         {reason}")
                         print(f"  Action:         No alert sent - false alarm")
                         print("=" * w + "\n")
-                    else:
-                        # Fire confirmed — publish alert
+                    elif va:
+                        # 2FA confirmed fire — publish alert
                         fire_event.publish(
                             building   = loc["building"],
                             floor      = loc["floor"],
@@ -404,23 +408,32 @@ class FireDetector:
                             longitude  = loc["lng"],
                         )
                         supabase_publish(loc["lat"], loc["lng"], loc["building"])
-
-                        if va:
-                            # 2FA confirmed fire
-                            risk = va.get("risk_level", score.risk_level).upper()
-                            print("\n" + "=" * w)
-                            print(f"  YOLO Detection: {det_label} (conf={conf_str})")
-                            print(f"  Vision 2FA:     CONFIRMED FIRE")
-                            print(f"  Risk Level:     {risk}")
-                            print(f"  Action:         Alert published - evacuate now")
-                            print("=" * w + "\n")
-                        else:
-                            # No Vision API — YOLO-only
-                            print("\n" + "=" * w)
-                            print(f"  YOLO Detection: {det_label} (conf={conf_str})")
-                            print(f"  Vision 2FA:     DISABLED (no API key)")
-                            print(f"  Action:         Alert published (YOLO-only)")
-                            print("=" * w + "\n")
+                        risk = va.get("risk_level", score.risk_level).upper()
+                        print("\n" + "=" * w)
+                        print(f"  YOLO Detection: {det_label} (conf={conf_str})")
+                        print(f"  Vision 2FA:     CONFIRMED FIRE")
+                        print(f"  Risk Level:     {risk}")
+                        print(f"  Action:         Alert published - evacuate now")
+                        print("=" * w + "\n")
+                    else:
+                        # No Vision API — clean output, no 2FA mention
+                        fire_event.publish(
+                            building   = loc["building"],
+                            floor      = loc["floor"],
+                            zone       = loc["zone"],
+                            confidence = score.best_confidence,
+                            risk_level = score.risk_level,
+                            camera_id  = DetectorConfig.CAMERA_ID,
+                            latitude   = loc["lat"],
+                            longitude  = loc["lng"],
+                        )
+                        supabase_publish(loc["lat"], loc["lng"], loc["building"])
+                        print("\n" + "=" * w)
+                        print(f"  YOLO Detection: {det_label} (conf={conf_str})")
+                        print(f"  Confidence:     {frames_str} frames confirmed")
+                        print(f"  Risk Level:     {score.risk_level}")
+                        print(f"  Action:         Alert published to evacuation system")
+                        print("=" * w + "\n")
 
                 # ── Display ───────────────────────────────────────────────
                 if display:
@@ -626,7 +639,11 @@ def main():
     parser.add_argument("--no-display", action="store_true")
     parser.add_argument("--serve",      action="store_true")
     parser.add_argument("--port",       default=8001, type=int)
+    parser.add_argument("--no-vision",  action="store_true", help="Disable OpenAI Vision 2FA")
     args = parser.parse_args()
+
+    if args.no_vision:
+        DetectorConfig.USE_CLAUDE_VISION = False
 
     detector = FireDetector()
 
