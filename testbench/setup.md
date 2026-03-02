@@ -18,7 +18,7 @@ python testbench/run_demo.py
 | Phase | What happens |
 |-------|-------------|
 | **1. Detection** | YOLO + EarlyFireDetector on video — CV2 window with live bounding boxes |
-| **2. Communication** | Simulated Telegram alerts + evacuation routing with real math |
+| **2. Communication** | Interactive evacuation — you play as a trapped person near the fire |
 | **3. Dashboard** | Streamlit Command Centre opens in browser with fire map + evacuee status |
 
 Press **Q** in the video window to skip ahead. Press **Ctrl+C** to exit.
@@ -29,6 +29,7 @@ Press **Q** in the video window to skip ahead. Press **Ctrl+C** to exit.
 python testbench/run_demo.py --input path/to/video.mp4   # custom video
 python testbench/run_demo.py --no-display                 # headless (no CV2 window)
 python testbench/run_demo.py --skip-dashboard             # skip Streamlit launch
+python testbench/run_demo.py --no-interactive              # auto-simulate, no prompts
 ```
 
 ---
@@ -48,14 +49,13 @@ python testbench/run_demo.py --skip-dashboard             # skip Streamlit launc
 - Multi-frame confirmation: 5/8 consecutive frames required to trigger alert
 - Terminal prints real-time detection events and structured alert JSON
 
-### Phase 2: Communication & Routing (~5s)
+### Phase 2: Interactive Evacuation (~30s)
 
-- Simulates Telegram broadcast to 4 registered users
-- Calculates real Haversine distances from each user to the fire
-- Routes endangered users to the nearest of 9 NTU assembly zones
-- Generates Google Maps walking directions
-- Simulates user button taps: "I have reached Safety" / "EMERGENCY RESCUE"
-- Writes local state to `testbench/demo_state.json`
+- You play as a trapped person near the fire
+- Share your location → system calculates distance and routes you to nearest safe zone
+- Choose: "I have reached Safety" or "EMERGENCY RESCUE (SOS)"
+- Other registered users resolve automatically in the background
+- Writes live state to `testbench/demo_state.json` (dashboard updates in real-time)
 
 ### Phase 3: Command Centre Dashboard
 
