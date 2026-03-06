@@ -115,13 +115,13 @@ def handle_location(message):
 
     # INLINE BUTTON SETUP (SAFE & EMERGENCY)
     interactive_buttons = InlineKeyboardMarkup()
-    interactive_buttons.add(InlineKeyboardButton("I have reached Safety", callback_data="mark_safe"))
-    interactive_buttons.add(InlineKeyboardButton("EMERGENCY RESCUE", callback_data="mark_emergency"))
+    interactive_buttons.add(InlineKeyboardButton("\U0001f7e2 I have reached Safety", callback_data="mark_safe"))
+    interactive_buttons.add(InlineKeyboardButton("\U0001f6a8 EMERGENCY RESCUE", callback_data="mark_emergency"))
 
     # STRICT GEOGRAPHIC ISOLATION ROUTING
     if status == "secure":
         hide_markup = telebot.types.ReplyKeyboardRemove()
-        bot.reply_to(message, f"STATUS: SAFE. Stay clear of {ACTIVE_FIRE_NAME}.", reply_markup=hide_markup)
+        bot.reply_to(message, f"\U0001f7e2 STATUS: SAFE. Stay clear of {ACTIVE_FIRE_NAME}.", reply_markup=hide_markup)
     else:
         # Dynamically pick the closest safe zone to the user that is far enough from the fire
         min_safe_distance_from_fire = 200  # meters
@@ -155,11 +155,11 @@ def handle_location(message):
             gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lng}&destination={s_lat},{s_lng}&waypoints={mid_lat},{mid_lng}&travelmode=walking"
             gmaps_link_escaped = gmaps_link.replace("&", "&amp;")
 
-            msg_text = f"ENDANGERED.\nHazard: {ACTIVE_FIRE_NAME}\n\nProceed immediately to <b>{best_zone}</b>.\n<a href='{gmaps_link_escaped}'>Open Safe Route</a>\n\n<i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
+            msg_text = f"\U0001f534 ENDANGERED.\n\U0001f525 Hazard: {ACTIVE_FIRE_NAME}\n\nProceed immediately to <b>{best_zone}</b>.\n\U0001f4cd <a href='{gmaps_link_escaped}'>Open Safe Route</a>\n\n\u26a0\ufe0f <i>Once you reach, press the Safe button. Click on Emergency if you need urgent help.</i>"
             bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
 
         except nx.NetworkXNoPath:
-            msg_text = f"ENDANGERED. Please move away from {ACTIVE_FIRE_NAME} immediately.\n\n<i>Once you are clear, press the Safe button. Click on Emergency if you need urgent help.</i>"
+            msg_text = f"\U0001f534 ENDANGERED. Please move away from {ACTIVE_FIRE_NAME} immediately.\n\n\u26a0\ufe0f <i>Once you are clear, press the Safe button. Click on Emergency if you need urgent help.</i>"
             bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=interactive_buttons)
 
 # --- BUTTON CLICK LISTENER (UPDATES DATABASE LIVE) ---
@@ -169,10 +169,10 @@ def handle_status_buttons(call):
 
     if call.data == "mark_safe":
         new_status = "secure"
-        reply_text = "<b>STATUS UPDATED: SECURE.</b>\n\nYou have been marked as safe on the Command Dashboard. Please remain at the assembly area."
+        reply_text = "\u2705 <b>STATUS UPDATED: SECURE.</b>\n\nYou have been marked as safe on the Command Dashboard. Please remain at the assembly area."
     else:
         new_status = "emergency help"
-        reply_text = "<b>EMERGENCY LOGGED.</b>\n\nYour status is flashing red on the Command Dashboard. Rescue teams have been notified of your exact last known location. Stay exactly where you are."
+        reply_text = "\U0001f6a8 <b>EMERGENCY LOGGED.</b>\n\nYour status is flashing red on the Command Dashboard. Rescue teams have been notified of your exact last known location. Stay exactly where you are."
 
     api_endpoint = f"{SUPABASE_URL}/rest/v1/evacuees?chat_id=eq.{chat_id}"
     headers = {
@@ -197,11 +197,11 @@ def handle_status_buttons(call):
 def mass_alert():
     print(f"3. Broadcasting {ACTIVE_FIRE_NAME} alert to ALL registered users...")
     markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add(KeyboardButton("SEND MY LOCATION", request_location=True))
+    markup.add(KeyboardButton("\U0001f4cd SEND MY LOCATION", request_location=True))
 
     for user_id in REGISTERED_USERS:
         try:
-            bot.send_message(user_id, f"<b>CRITICAL ALARM</b>\nFire detected at <b>{ACTIVE_FIRE_NAME}</b>! Tap below immediately.", parse_mode="HTML", reply_markup=markup)
+            bot.send_message(user_id, f"\U0001f6a8 <b>CRITICAL ALARM</b> \U0001f6a8\nFire detected at <b>{ACTIVE_FIRE_NAME}</b>! Tap below immediately.", parse_mode="HTML", reply_markup=markup)
             print(f"  Alert sent to: {user_id}")
         except Exception as e:
             print(f"  Could not reach {user_id}: {e}")
